@@ -49,7 +49,6 @@
     {
       "dateOfSleep": "2026-01-20",
       "duration": 27000000,
-      "efficiency": 91,
       "minutesAwake": 38,
       "minutesAsleep": 412,
       "isMainSleep": true

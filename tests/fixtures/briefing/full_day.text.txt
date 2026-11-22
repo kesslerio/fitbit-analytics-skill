@@ -27,7 +27,7 @@
 
 *Sleep*
   • Duration: 7.5 hours
-  • Efficiency: 91%
+  • Efficiency: unavailable (not provided by Google Health API)
   • Awake episodes: 38
 
 *Trends (vs 7-day avg)*

@@ -14,6 +14,7 @@
 
 *Sleep*
   • Duration: No data
+  • Efficiency: unavailable (not provided by Google Health API)
   • Awake episodes: None
 
 *Trends (vs 7-day avg)*

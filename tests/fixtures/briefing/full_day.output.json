@@ -14,7 +14,7 @@
     "peak": 3
   },
   "sleep_hours": 7.5,
-  "sleep_efficiency": 91,
+  "sleep_efficiency": null,
   "awake_count": 38,
   "steps_trend": 6.2,
   "calories_trend": 3.1,

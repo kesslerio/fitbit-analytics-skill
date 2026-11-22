@@ -2,19 +2,26 @@
 """
 Fitbit Morning Briefing CLI
 
-Generate concise morning health briefings from Fitbit data.
+Generate concise morning health briefings from Fitbit data (read through the
+Google Health API).
 
 Usage:
     python fitbit_briefing.py                    # Today's briefing
     python fitbit_briefing.py --date 2026-01-20  # Specific date
     python fitbit_briefing.py --format json      # JSON output
     python fitbit_briefing.py --format brief     # 3-line brief
+
+Exit codes:
+    0  the briefing was printed
+    1  any other failure; the last stderr line is a one-line ERROR summary
+    2  Google Health needs a new login; stderr is one line naming the command
 """
 
 import argparse
 import sys
 import json
 import logging
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -24,7 +31,11 @@ logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 # Add scripts dir to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fitbit_api import FitbitClient
+from fitbit_api import FitbitAuthError, FitbitClient, FitbitReauthRequiredError, GoogleHealthApiError
+
+# The job runner keeps only the end of stderr for its failure alert, so the final
+# error line must stay short enough to survive intact.
+MAX_ERROR_LINE = 160
 
 
 def _calculate_activity_level(steps, calories, active_minutes):
@@ -150,15 +161,14 @@ def _format_text_briefing(data, yesterday_activities=None, yesterday_azm=None, b
     # Sleep
     lines.append("*Sleep*")
     sleep_hours = data.get("sleep_hours", "N/A")
-    sleep_efficiency = data.get("sleep_efficiency", "N/A")
     awake_count = data.get("awake_count", "N/A")
     
     if sleep_hours and sleep_hours != "N/A":
         lines.append(f"  • Duration: {sleep_hours} hours")
     else:
         lines.append(f"  • Duration: No data")
-    if sleep_efficiency and sleep_efficiency != "N/A":
-        lines.append(f"  • Efficiency: {sleep_efficiency}%")
+    # Google Health provides no sleep efficiency; keep the line and say so.
+    lines.append("  • Efficiency: unavailable (not provided by Google Health API)")
     lines.append(f"  • Awake episodes: {awake_count}")
     lines.append("")
     
@@ -218,7 +228,6 @@ def main():
         resting_hr = None
         hr_zones = {}
         sleep_hours = None
-        sleep_efficiency = None
         awake_count = None
         
         steps_list = steps_data.get("activities-steps", []) if steps_data else []
@@ -282,7 +291,6 @@ def main():
             sleep_summary = sleep_list[0]
             sleep_duration = sleep_summary.get("duration", 0)
             sleep_hours = round(sleep_duration / 3600000, 1) if sleep_duration else None
-            sleep_efficiency = sleep_summary.get("efficiency")
             awake_count = sleep_summary.get("minutesAwake")
         
         # Calculate trends vs 7-day average
@@ -334,6 +342,8 @@ def main():
                 yesterday_azm = azm_list[0].get("value", {})
             else:
                 yesterday_azm = {}
+        except FitbitReauthRequiredError:
+            raise
         except Exception as e:
             logging.warning(f"Failed to fetch Active Zone Minutes for {yesterday}: {e}")
             yesterday_azm = {}
@@ -351,7 +361,7 @@ def main():
             "avg_hr": avg_hr,
             "hr_zones": hr_zones,
             "sleep_hours": sleep_hours,
-            "sleep_efficiency": sleep_efficiency,
+            "sleep_efficiency": None,
             "awake_count": awake_count,
             "steps_trend": round(steps_trend, 1),
             "calories_trend": round(calories_trend, 1),
@@ -367,11 +377,27 @@ def main():
         else:  # text
             print(_format_text_briefing(data, yesterday_activities=yesterday_activities, yesterday_azm=yesterday_azm))
     
+    except FitbitReauthRequiredError as e:
+        # Never cut this line: its tail is the command the owner must run.
+        print(" ".join(str(e).split()), file=sys.stderr)
+        sys.exit(2)
     except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
+        if sys.stderr.isatty():
+            traceback.print_exc()
+        if isinstance(e, (FitbitAuthError, GoogleHealthApiError)):
+            message = f"ERROR: {e}"  # already names the failed Google Health operation
+        else:
+            message = f"ERROR: Fitbit briefing failed: {type(e).__name__}: {e}"
+        print(_one_line(message), file=sys.stderr)
         sys.exit(1)
+
+
+def _one_line(message):
+    """Collapse a message to one line of at most MAX_ERROR_LINE characters."""
+    line = " ".join(str(message).split())
+    if len(line) > MAX_ERROR_LINE:
+        line = line[:MAX_ERROR_LINE - 3] + "..."
+    return line
 
 
 if __name__ == "__main__":
