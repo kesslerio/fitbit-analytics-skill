@@ -5,3 +5,7 @@ venv/
 .venv/
 ENV/
 env/
+
+# Google OAuth client and auth state must never be committed
+client_secret*.json
+google-health*.json

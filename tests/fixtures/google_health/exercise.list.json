@@ -1,0 +1,45 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/me/dataTypes/exercise/dataPoints/synthetic-1",
+      "exercise": {
+        "exerciseType": "WALKING",
+        "displayName": "Walk",
+        "interval": {
+          "startTime": "2026-01-20T01:00:00Z",
+          "startUtcOffset": "-28800s",
+          "civilStartTime": {
+            "date": {
+              "year": 2026,
+              "month": 1,
+              "day": 19
+            },
+            "time": {
+              "hours": 17,
+              "minutes": 0
+            }
+          },
+          "endTime": "2026-01-20T01:35:00Z",
+          "endUtcOffset": "-28800s",
+          "civilEndTime": {
+            "date": {
+              "year": 2026,
+              "month": 1,
+              "day": 19
+            },
+            "time": {
+              "hours": 17,
+              "minutes": 35
+            }
+          }
+        },
+        "activeDuration": "1800s",
+        "metricsSummary": {
+          "caloriesKcal": 160.2,
+          "steps": "3400",
+          "distanceMillimeters": 2500000
+        }
+      }
+    }
+  ]
+}

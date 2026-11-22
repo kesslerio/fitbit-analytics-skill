@@ -1,0 +1,156 @@
+{
+  "rollupDataPoints": [
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 13
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 14
+        }
+      },
+      "totalCalories": {
+        "kcalSum": 2150.2
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 14
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 15
+        }
+      },
+      "totalCalories": {
+        "kcalSum": 2380.0
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 15
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 16
+        }
+      },
+      "totalCalories": {
+        "kcalSum": 2089.6
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 16
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 17
+        }
+      },
+      "totalCalories": {
+        "kcalSum": 2290.4
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 17
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 18
+        }
+      },
+      "totalCalories": {
+        "kcalSum": 2510.0
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 18
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 19
+        }
+      },
+      "totalCalories": {
+        "kcalSum": 2040.1
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 19
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 20
+        }
+      },
+      "totalCalories": {
+        "kcalSum": 2229.8
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 20
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 21
+        }
+      },
+      "totalCalories": {
+        "kcalSum": 2310.4
+      }
+    }
+  ]
+}

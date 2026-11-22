@@ -77,11 +77,12 @@ class FakeFitbitClient:
         return self.get_logged_activities(date)
 
 
-def run_briefing(client, output_format):
-    """Run the briefing CLI against a fake client; return (stdout, stderr, exit_code)."""
+def run_briefing(client, output_format, target_date=None):
+    """Run the briefing CLI with the given client; return (stdout, stderr, exit_code)."""
     stdout = io.StringIO()
     stderr = io.StringIO()
-    argv = ["fitbit_briefing.py", "--date", client.fixture["target_date"], "--format", output_format]
+    target_date = target_date or client.fixture["target_date"]
+    argv = ["fitbit_briefing.py", "--date", target_date, "--format", output_format]
     exit_code = 0
     with mock.patch.object(fitbit_briefing, "FitbitClient", return_value=client):
         with mock.patch.object(sys, "argv", argv):

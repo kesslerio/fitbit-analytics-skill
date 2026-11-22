@@ -1,0 +1,156 @@
+{
+  "rollupDataPoints": [
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 13
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 14
+        }
+      },
+      "steps": {
+        "countSum": "7200"
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 14
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 15
+        }
+      },
+      "steps": {
+        "countSum": "9100"
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 15
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 16
+        }
+      },
+      "steps": {
+        "countSum": "6400"
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 16
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 17
+        }
+      },
+      "steps": {
+        "countSum": "8800"
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 17
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 18
+        }
+      },
+      "steps": {
+        "countSum": "11050"
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 18
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 19
+        }
+      },
+      "steps": {
+        "countSum": "5300"
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 19
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 20
+        }
+      },
+      "steps": {
+        "countSum": "7650"
+      }
+    },
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 20
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 21
+        }
+      },
+      "steps": {
+        "countSum": "8421"
+      }
+    }
+  ]
+}

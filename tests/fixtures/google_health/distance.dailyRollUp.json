@@ -1,0 +1,23 @@
+{
+  "rollupDataPoints": [
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 20
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 21
+        }
+      },
+      "distance": {
+        "millimetersSum": "6120000"
+      }
+    }
+  ]
+}

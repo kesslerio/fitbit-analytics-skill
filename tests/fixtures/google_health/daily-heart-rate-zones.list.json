@@ -1,0 +1,35 @@
+{
+  "dataPoints": [
+    {
+      "dailyHeartRateZones": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 18
+        },
+        "heartRateZones": [
+          {
+            "heartRateZoneType": "LIGHT",
+            "minBeatsPerMinute": "30",
+            "maxBeatsPerMinute": "98"
+          },
+          {
+            "heartRateZoneType": "MODERATE",
+            "minBeatsPerMinute": "98",
+            "maxBeatsPerMinute": "137"
+          },
+          {
+            "heartRateZoneType": "VIGOROUS",
+            "minBeatsPerMinute": "137",
+            "maxBeatsPerMinute": "166"
+          },
+          {
+            "heartRateZoneType": "PEAK",
+            "minBeatsPerMinute": "166",
+            "maxBeatsPerMinute": "220"
+          }
+        ]
+      }
+    }
+  ]
+}

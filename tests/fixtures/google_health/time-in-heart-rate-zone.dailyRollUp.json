@@ -1,0 +1,40 @@
+{
+  "rollupDataPoints": [
+    {
+      "civilStartTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 20
+        }
+      },
+      "civilEndTime": {
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 21
+        }
+      },
+      "timeInHeartRateZone": {
+        "timeInHeartRateZones": [
+          {
+            "heartRateZone": "LIGHT",
+            "duration": "72600s"
+          },
+          {
+            "heartRateZone": "MODERATE",
+            "duration": "2520s"
+          },
+          {
+            "heartRateZone": "VIGOROUS",
+            "duration": "720s"
+          },
+          {
+            "heartRateZone": "PEAK",
+            "duration": "180s"
+          }
+        ]
+      }
+    }
+  ]
+}
