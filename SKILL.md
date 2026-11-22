@@ -1,7 +1,7 @@
 ---
 name: fitbit-analytics
-description: Fitbit health and fitness data integration. Fetch steps, heart rate, sleep, activity, calories, and trends from Fitbit Web API. Generate automated health reports and alerts. Requires FITBIT_CLIENT_ID, FITBIT_CLIENT_SECRET, FITBIT_ACCESS_TOKEN, FITBIT_REFRESH_TOKEN.
-metadata: {"openclaw":{"requires":{"bins":["python3"],"env":["FITBIT_CLIENT_ID","FITBIT_CLIENT_SECRET","FITBIT_ACCESS_TOKEN","FITBIT_REFRESH_TOKEN"]},"homepage":"https://github.com/kesslerio/fitbit-analytics-openclaw-skill"}}
+description: Fitbit health and fitness data integration. Fetch steps, heart rate, sleep, activity, calories, and trends through the Google Health API (the Fitbit Web API replacement). Generate automated health reports and alerts. Requires a one-time Google login (scripts/google_health_auth.py login).
+metadata: {"openclaw":{"requires":{"bins":["python3"]},"homepage":"https://github.com/kesslerio/fitbit-analytics-openclaw-skill"}}
 ---
 
 # Fitbit Analytics
@@ -9,11 +9,8 @@ metadata: {"openclaw":{"requires":{"bins":["python3"],"env":["FITBIT_CLIENT_ID",
 ## Quick Start
 
 ```bash
-# Set Fitbit API credentials
-export FITBIT_CLIENT_ID="your_client_id"
-export FITBIT_CLIENT_SECRET="your_client_secret"
-export FITBIT_ACCESS_TOKEN="your_access_token"
-export FITBIT_REFRESH_TOKEN="your_refresh_token"
+# One-time Google login (see SETUP.md for the Google Cloud project)
+python scripts/google_health_auth.py login --client-secrets /path/to/client_secret.json
 
 # Generate morning briefing with Active Zone Minutes
 python scripts/fitbit_briefing.py
@@ -29,9 +26,6 @@ python scripts/fitbit_api.py sleep --days 7
 
 # Generate weekly health report
 python scripts/fitbit_api.py report --type weekly
-
-# Refresh rotated OAuth tokens when due
-python scripts/refresh_tokens.py
 
 # Get activity summary
 python scripts/fitbit_api.py summary --days 7
@@ -60,7 +54,7 @@ python scripts/fitbit_briefing.py --format json      # JSON output
 # - Yesterday's Active Zone Minutes (total, Fat Burn, Cardio, Peak)
 # - Today's activity summary (steps, calories, floors, distance)
 # - Heart rate (resting, average, zones)
-# - Sleep (duration, efficiency, awake episodes)
+# - Sleep (duration, awake minutes; efficiency shows as unavailable)
 # - Trends vs 7-day average
 ```
 
@@ -76,20 +70,18 @@ python scripts/fitbit_briefing.py --format json      # JSON output
   "resting_hr": 58,
   "avg_hr": 72,
   "sleep_hours": 7.2,
-  "sleep_efficiency": 89,
-  "awake_minutes": 12,
-  "yesterday_activities": [
-    {"name": "Run", "duration": 35, "calories": 320}
-  ],
-  "yesterday_azm": {
-    "activeZoneMinutes": 61,
-    "fatBurnActiveZoneMinutes": 39,
-    "cardioActiveZoneMinutes": 22
-  }
+  "sleep_efficiency": null,
+  "awake_count": 12,
+  "activity_level": "Moderate",
+  "steps_trend": 12
 }
 ```
 
-**Note:** Cardio Load is NOT available via Fitbit API - it's a Fitbit Premium feature only visible in the mobile app.
+Yesterday's activities and Active Zone Minutes appear in the text format only.
+
+**Exit codes:** 0 when the briefing was printed, 1 for any other failure (the last stderr line is a one-line `ERROR:` summary), and 2 when Google Health needs a new login (stderr is one line naming the login command).
+
+**Note:** Sleep efficiency, Daily Readiness and Cardio Load are not available from the Google Health API. Efficiency is shown as unavailable; the skill does not estimate it.
 
 ### 2. Data Fetching (CLI)
 ```bash
@@ -108,13 +100,13 @@ export PYTHONPATH="{baseDir}/scripts"
 python - <<'PY'
 from fitbit_api import FitbitClient
 
-client = FitbitClient()  # Uses env vars for credentials
+client = FitbitClient()  # Uses the login stored in ~/.fitbit-analytics/google-health.json
 
 # Fetch data (requires start_date and end_date)
 steps_data = client.get_steps(start_date="2026-01-01", end_date="2026-01-16")
 hr_data = client.get_heartrate(start_date="2026-01-01", end_date="2026-01-16")
 sleep_data = client.get_sleep(start_date="2026-01-01", end_date="2026-01-16")
-activity_summary = client.get_activity_summary(start_date="2026-01-01", end_date="2026-01-16")
+activity_summary = client.get_activity_summary(start_date="2026-01-16")
 PY
 ```
 
@@ -137,8 +129,8 @@ python {baseDir}/scripts/alerts.py --days 7 --steps 8000 --sleep 7
 
 ## Scripts
 
-- `scripts/fitbit_api.py` - Fitbit Web API wrapper, CLI, and analysis
-- `scripts/refresh_tokens.py` - Standalone proactive token refresh CLI
+- `scripts/fitbit_api.py` - Data client (Google Health API in Fitbit-shaped JSON), CLI, and analysis
+- `scripts/google_health_auth.py` - One-time Google login and on-demand token refresh
 - `scripts/fitbit_briefing.py` - Morning briefing CLI (text/brief/json output)
 - `scripts/alerts.py` - Threshold-based notifications
 
@@ -149,9 +141,10 @@ python {baseDir}/scripts/alerts.py --days 7 --steps 8000 --sleep 7
 | `get_steps(start, end)` | Daily step counts |
 | `get_calories(start, end)` | Daily calories burned |
 | `get_distance(start, end)` | Daily distance |
-| `get_activity_summary(start, end)` | Activity summary |
+| `get_activity_summary(date)` | One day's activity summary |
+| `get_logged_activities(date)` | Exercises logged on one date |
 | `get_heartrate(start, end)` | Heart rate data |
-| `get_sleep(start, end)` | Sleep data |
+| `get_sleep(start, end)` | Sleep sessions (no efficiency) |
 | `get_sleep_stages(start, end)` | Detailed sleep stages |
 | `get_spo2(start, end)` | Blood oxygen levels |
 | `get_weight(start, end)` | Weight measurements |
@@ -159,25 +152,20 @@ python {baseDir}/scripts/alerts.py --days 7 --steps 8000 --sleep 7
 
 ## References
 
-- `references/api.md` - Fitbit Web API documentation
+- `references/google-health-api.md` - Google Health API endpoints, metric mapping, and error handling
 - `references/metrics.md` - Metric definitions and interpretations
 
 ## Authentication
 
-Fitbit API requires OAuth 2.0 authentication:
-1. Create app at: https://dev.fitbit.com/apps
-2. Get client_id and client_secret
-3. Complete OAuth flow to get access_token and refresh_token
-4. Set environment variables or pass to scripts
-5. Run `python scripts/refresh_tokens.py` every 6 hours to keep refresh token rotation active
+The Google Health API uses Google OAuth 2.0. See `SETUP.md`:
+1. Create a Google Cloud project, enable the Google Health API, and create an OAuth client (consent screen External, In Production).
+2. Run `python scripts/google_health_auth.py login --client-secrets <client JSON>` once. Open the printed URL in any browser and paste back the URL it lands on.
+3. The login is stored in `~/.fitbit-analytics/google-health.json` (mode 0600). The access token refreshes on demand; no refresh job is needed.
+4. To log in again later, run `python scripts/google_health_auth.py login` (it reuses the stored client).
 
 ## Environment
 
-Required:
-- `FITBIT_CLIENT_ID`
-- `FITBIT_CLIENT_SECRET`
-- `FITBIT_ACCESS_TOKEN`
-- `FITBIT_REFRESH_TOKEN`
+No environment variables are needed. Credentials are never read from the environment or `secrets.conf`.
 
 ## Automation (Cron Jobs)
 
@@ -199,18 +187,4 @@ openclaw cron add \
 
 **Note:** Replace `/path/to/your/` with your actual path and `<YOUR_TELEGRAM_CHAT_ID>` with your Telegram channel/group ID.
 
-### Proactive Token Refresh (Every 6 Hours)
-```bash
-openclaw cron add \
-  --name "Refresh Fitbit Tokens" \
-  --cron "0 */6 * * *" \
-  --tz "America/Los_Angeles" \
-  --session isolated \
-  --wake next-heartbeat \
-  --deliver \
-  --channel telegram \
-  --target "<YOUR_TELEGRAM_CHAT_ID>" \
-  --message "cd /path/to/your && python3 scripts/refresh_tokens.py"
-```
-
-The token cache at `~/.fitbit-analytics/tokens.json` stores `expires_at` and `refreshed_at` so the refresh command can rotate tokens before Fitbit inactivity expiry.
+No token refresh job is needed: Google refresh tokens do not rotate, and the client refreshes the access token when it runs. Have the scheduler alert on a non-zero exit so a needed re-login (exit 2) is noticed the same day.

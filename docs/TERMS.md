@@ -3,7 +3,7 @@
 **Effective Date:** January 20, 2026
 
 ## 1. Acceptance of Terms
-By connecting your Fitbit account to this Personal Assistant, you agree to these Terms of Service.
+By connecting your Fitbit data (through your Google account and the Google Health API) to this Personal Assistant, you agree to these Terms of Service.
 
 ## 2. Description of Service
 This Personal Assistant is a personal AI agent that retrieves and analyzes your Fitbit data to provide health insights and home automation triggers.

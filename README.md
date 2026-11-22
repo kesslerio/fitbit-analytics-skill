@@ -3,53 +3,30 @@
 [![OpenClaw Community Skill](https://img.shields.io/badge/openclaw-community%20skill-blue)](https://github.com/openclaw/openclaw)
 [![ClawdHub Listed](https://img.shields.io/badge/clawdhub-listed-green)](https://clawdhub.com/skills/fitbit-analytics)
 
-Fitbit health and fitness data integration for OpenClaw. Fetch steps, heart rate, sleep, activity, calories, and trends from Fitbit Web API. Generate automated health reports, correlations, and alerts.
+Fitbit health and fitness data integration for OpenClaw. Fetch steps, heart rate, sleep, activity, calories, and trends through the Google Health API (the replacement for the shut-down Fitbit Web API). Generate automated health reports, correlations, and alerts.
 
 ## Features
 
-- **Activity Tracking**: Fetch daily steps, distance, calories, and active minutes.
-- **Heart Rate**: Access continuous heart rate data and resting heart rate trends.
-- **Sleep Analytics**: Analyze sleep stages (Deep, Light, REM, Wake) and efficiency.
+- **Activity Tracking**: Fetch daily steps, distance, calories, floors, and active minutes.
+- **Heart Rate**: Resting heart rate and time in heart-rate zones.
+- **Sleep Analytics**: Sleep duration, minutes awake, and sleep stages (Deep, Light, REM, Wake). Sleep efficiency is not available from the Google Health API and is shown as unavailable.
 - **Reports**: Generate daily/weekly health reports with trend analysis.
-- **Automation**: Scripts ready for cron jobs (e.g., daily summaries).
+- **Automation**: A morning briefing with exit codes a scheduler can alert on.
 
 ## Setup
 
-### 1. Create a Fitbit Developer App
-1.  Go to [dev.fitbit.com/apps](https://dev.fitbit.com/apps) and log in.
-2.  Click **"Register an App"**.
-3.  Fill in the details:
-    *   **Application Name:** `Personal Assistant` (or your choice)
-    *   **Description:** `Personal AI analytics.`
-    *   **OAuth 2.0 Application Type:** `Personal`
-    *   **Redirect URL:** `http://localhost:8080/`
-    *   **Default Access Type:** `Read & Write`
-4.  **Save** and note your **Client ID** and **Client Secret**.
+Google turned off the Fitbit Web API and Fitbit OAuth, so this skill uses the
+Google Health API v4 with a one-time Google login. Follow [SETUP.md](SETUP.md):
 
-### 2. Configure Credentials
-Add keys to your `secrets.conf` or environment variables:
-```bash
-export FITBIT_CLIENT_ID="YOUR_CLIENT_ID"
-export FITBIT_CLIENT_SECRET="YOUR_CLIENT_SECRET"
-```
-
-### 3. Authorization Flow
-1.  Construct the URL:
-    ```
-    https://www.fitbit.com/oauth2/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2F&scope=activity%20heartrate%20location%20nutrition%20profile%20settings%20sleep%20social%20weight&expires_in=604800
-    ```
-2.  Authorize in browser.
-3.  Copy the `code` from the redirect URL (`http://localhost:8080/?code=...`).
-4.  Exchange code for tokens:
-    ```bash
-    curl -X POST https://api.fitbit.com/oauth2/token \
-      -u "CLIENT_ID:CLIENT_SECRET" \
-      -H "Content-Type: application/x-www-form-urlencoded" \
-      -d "grant_type=authorization_code" \
-      -d "code=YOUR_CODE" \
-      -d "redirect_uri=http://localhost:8080/"
-    ```
-5.  Save `access_token` and `refresh_token` to `FITBIT_ACCESS_TOKEN` and `FITBIT_REFRESH_TOKEN`.
+1. Sign in to the Google Health app (the renamed Fitbit app) on your phone.
+2. Create a Google Cloud project, enable the Google Health API, set the OAuth
+   consent screen to External and In Production, and create an OAuth client.
+3. Log in once:
+   ```bash
+   python3 scripts/google_health_auth.py login --client-secrets /path/to/client_secret.json
+   ```
+   Open the printed URL in any browser, approve, and paste back the URL the
+   browser lands on. The command works on a headless server.
 
 ## Usage
 
@@ -85,15 +62,6 @@ python scripts/fitbit_briefing.py --format brief
 python scripts/fitbit_briefing.py --format json
 ```
 
-### Proactive Token Refresh
-```bash
-# Refresh only when the last token rotation is older than 6 hours
-python scripts/refresh_tokens.py
-
-# Force a refresh immediately
-python scripts/refresh_tokens.py --force
-```
-
 **Example brief output:**
 ```
 📊 8,543 steps • 2,340 cal
@@ -113,37 +81,38 @@ python scripts/refresh_tokens.py --force
   "resting_hr": 58,
   "avg_hr": 72,
   "sleep_hours": 7.2,
-  "sleep_efficiency": 89,
-  "awake_minutes": 12,
+  "sleep_efficiency": null,
+  "awake_count": 12,
   "activity_level": "Moderate",
-  "steps_trend": 12,
-  "yesterday_azm": {
-    "activeZoneMinutes": 61,
-    "fatBurnActiveZoneMinutes": 39,
-    "cardioActiveZoneMinutes": 22
-  }
+  "steps_trend": 12
 }
 ```
 
 ## Structure
-- `scripts/fitbit_api.py`: Main API wrapper and CLI tool.
-- `scripts/refresh_tokens.py`: Standalone proactive token refresh CLI.
+- `scripts/fitbit_api.py`: Data client (Google Health API in Fitbit-shaped JSON) and CLI tool.
+- `scripts/google_health_auth.py`: One-time Google login and token refresh.
 - `scripts/fitbit_briefing.py`: Morning briefing CLI (text/brief/json output).
 - `scripts/alerts.py`: Threshold-based notifications.
 - `references/`: API and metrics documentation.
 - `docs/`: Privacy Policy and Terms of Service.
 
 ## Token Refresh Behavior
-- The client refreshes tokens proactively before API calls when the access token is close to expiry.
-- A 401 response still triggers one forced refresh/retry to cover stale expiry metadata or clock drift.
-- Successful refreshes update `~/.config/systemd/user/secrets.conf` when present and always rewrite `~/.fitbit-analytics/tokens.json` atomically.
-- The token cache now stores both `expires_at` and `refreshed_at` so `scripts/refresh_tokens.py` can rotate refresh tokens before Fitbit inactivity limits are hit.
+- All auth state lives in `~/.fitbit-analytics/google-health.json` (mode 0600). Environment variables and `secrets.conf` are not read.
+- The client refreshes the access token on demand when it expires within 5 minutes, and once more after an HTTP 401.
+- Google refresh tokens are not rotated, so no refresh cron job is needed. A refresh token lasts until it is revoked or unused for 6 months (7 days if the OAuth client is left in Testing status).
+- When Google rejects the refresh token, or a required scope is missing, the client raises `FitbitReauthRequiredError` with the login command to run.
 
 ## Automation
-Run the standalone refresh command every 6 hours to keep the rotated refresh token active:
+Schedule the briefing and alert on a non-zero exit:
+
+| Exit code | Meaning |
+|-----------|---------|
+| 0 | The briefing was printed |
+| 1 | Another failure; the last stderr line is a one-line `ERROR:` summary |
+| 2 | Google Health needs a new login; stderr is one line naming the login command |
 
 ```bash
-0 */6 * * * cd /path/to/fitbit-analytics-openclaw-skill && python3 scripts/refresh_tokens.py
+0 8 * * * cd /path/to/fitbit-analytics-openclaw-skill && python3 scripts/fitbit_briefing.py --format text
 ```
 
 ## License
