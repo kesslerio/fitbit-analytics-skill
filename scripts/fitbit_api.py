@@ -440,6 +440,11 @@ class FitbitClient:
         endpoint = f"1/user/-/activities/date/{start_date}.json"
         return self._request(endpoint)
 
+    def get_logged_activities(self, date):
+        """Fetch the activities logged on one date"""
+        endpoint = f"1/user/-/activities/date/{date}.json"
+        return self._request(endpoint)
+
     def get_heartrate(self, start_date, end_date):
         """Fetch heart rate data"""
         endpoint = f"1/user/-/activities/heart/date/{start_date}/{end_date}.json"

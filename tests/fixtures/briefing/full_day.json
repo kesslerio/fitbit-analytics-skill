@@ -1,0 +1,74 @@
+{
+  "_comment": "Synthetic Fitbit-shaped client responses for one briefing day. Not real health data.",
+  "target_date": "2026-01-20",
+  "steps": [
+    {"dateTime": "2026-01-13", "value": "7200"},
+    {"dateTime": "2026-01-14", "value": "9100"},
+    {"dateTime": "2026-01-15", "value": "6400"},
+    {"dateTime": "2026-01-16", "value": "8800"},
+    {"dateTime": "2026-01-17", "value": "11050"},
+    {"dateTime": "2026-01-18", "value": "5300"},
+    {"dateTime": "2026-01-19", "value": "7650"},
+    {"dateTime": "2026-01-20", "value": "8421"}
+  ],
+  "calories": [
+    {"dateTime": "2026-01-13", "value": "2150"},
+    {"dateTime": "2026-01-14", "value": "2380"},
+    {"dateTime": "2026-01-15", "value": "2090"},
+    {"dateTime": "2026-01-16", "value": "2290"},
+    {"dateTime": "2026-01-17", "value": "2510"},
+    {"dateTime": "2026-01-18", "value": "2040"},
+    {"dateTime": "2026-01-19", "value": "2230"},
+    {"dateTime": "2026-01-20", "value": "2310"}
+  ],
+  "activity_summary": {
+    "2026-01-20": {
+      "summary": {
+        "distance": 6.12,
+        "floors": 9,
+        "veryActiveMinutes": 20,
+        "fairlyActiveMinutes": 15
+      }
+    }
+  },
+  "heartrate": [
+    {
+      "dateTime": "2026-01-20",
+      "value": {
+        "restingHeartRate": 58,
+        "heartRateZones": [
+          {"name": "Out of Range", "min": 30, "max": 98, "minutes": 1210},
+          {"name": "Fat Burn", "min": 98, "max": 137, "minutes": 42},
+          {"name": "Cardio", "min": 137, "max": 166, "minutes": 12},
+          {"name": "Peak", "min": 166, "max": 220, "minutes": 3}
+        ]
+      }
+    }
+  ],
+  "sleep": [
+    {
+      "dateOfSleep": "2026-01-20",
+      "duration": 27000000,
+      "efficiency": 91,
+      "minutesAwake": 38,
+      "minutesAsleep": 412,
+      "isMainSleep": true
+    }
+  ],
+  "logged_activities": {
+    "2026-01-19": [
+      {"name": "Walk", "duration": 1800000, "calories": 160}
+    ]
+  },
+  "active_zone_minutes": [
+    {
+      "dateTime": "2026-01-19",
+      "value": {
+        "activeZoneMinutes": 24,
+        "fatBurnActiveZoneMinutes": 12,
+        "cardioActiveZoneMinutes": 8,
+        "peakActiveZoneMinutes": 4
+      }
+    }
+  ]
+}

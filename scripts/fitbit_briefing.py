@@ -323,12 +323,12 @@ def main():
         
         # Get yesterday's activities
         yesterday = (datetime.strptime(target_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-        yesterday_activities_raw = client._request(f"1/user/-/activities/date/{yesterday}.json")
+        yesterday_activities_raw = client.get_logged_activities(yesterday)
         yesterday_activities = yesterday_activities_raw.get("activities", []) if yesterday_activities_raw else []
         
         # Get yesterday's Active Zone Minutes
         try:
-            yesterday_azm_raw = client._request(f"1/user/-/activities/active-zone-minutes/date/{yesterday}/1d.json")
+            yesterday_azm_raw = client.get_active_zone_minutes(yesterday, yesterday)
             azm_list = yesterday_azm_raw.get("activities-active-zone-minutes", []) if yesterday_azm_raw else []
             if azm_list and len(azm_list) > 0:
                 yesterday_azm = azm_list[0].get("value", {})

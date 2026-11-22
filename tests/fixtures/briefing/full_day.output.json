@@ -1,0 +1,23 @@
+{
+  "date": "2026-01-20",
+  "steps_today": 8421,
+  "calories_today": 2310,
+  "distance_today": 6.12,
+  "floors_today": 9,
+  "active_minutes": 35,
+  "activity_level": "Moderate",
+  "resting_hr": 58,
+  "avg_hr": 129,
+  "hr_zones": {
+    "fat_burn": 42,
+    "cardio": 12,
+    "peak": 3
+  },
+  "sleep_hours": 7.5,
+  "sleep_efficiency": 91,
+  "awake_count": 38,
+  "steps_trend": 6.2,
+  "calories_trend": 3.1,
+  "avg_steps_7d": 7928,
+  "avg_calories_7d": 2241
+}
