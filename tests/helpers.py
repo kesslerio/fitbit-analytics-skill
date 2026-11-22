@@ -1,5 +1,3 @@
-"""Shared test helpers: fake HTTP responses and errors for urllib."""
-
 import io
 import json
 import sys

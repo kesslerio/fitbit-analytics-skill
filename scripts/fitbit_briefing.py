@@ -167,7 +167,6 @@ def _format_text_briefing(data, yesterday_activities=None, yesterday_azm=None, b
         lines.append(f"  • Duration: {sleep_hours} hours")
     else:
         lines.append(f"  • Duration: No data")
-    # Google Health provides no sleep efficiency; keep the line and say so.
     lines.append("  • Efficiency: unavailable (not provided by Google Health API)")
     lines.append(f"  • Awake episodes: {awake_count}")
     lines.append("")
@@ -378,23 +377,25 @@ def main():
             print(_format_text_briefing(data, yesterday_activities=yesterday_activities, yesterday_azm=yesterday_azm))
     
     except FitbitReauthRequiredError as e:
-        # Never cut this line: its tail is the command the owner must run.
-        print(" ".join(str(e).split()), file=sys.stderr)
+        print(_collapse(str(e)), file=sys.stderr)
         sys.exit(2)
     except Exception as e:
         if sys.stderr.isatty():
             traceback.print_exc()
         if isinstance(e, (FitbitAuthError, GoogleHealthApiError)):
-            message = f"ERROR: {e}"  # already names the failed Google Health operation
+            message = f"ERROR: {e}"
         else:
             message = f"ERROR: Fitbit briefing failed: {type(e).__name__}: {e}"
         print(_one_line(message), file=sys.stderr)
         sys.exit(1)
 
 
+def _collapse(message):
+    return " ".join(str(message).split())
+
+
 def _one_line(message):
-    """Collapse a message to one line of at most MAX_ERROR_LINE characters."""
-    line = " ".join(str(message).split())
+    line = _collapse(message)
     if len(line) > MAX_ERROR_LINE:
         line = line[:MAX_ERROR_LINE - 3] + "..."
     return line

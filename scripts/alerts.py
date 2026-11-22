@@ -88,10 +88,10 @@ class FitbitAlerts:
         hr_by_date = {}
         
         if sleep_data:
-            for entry in sleep_data.get("sleep", []):
+            main_sleeps = (e for e in sleep_data.get("sleep", []) if e.get("isMainSleep", True))
+            for entry in main_sleeps:
                 date = entry.get("dateOfSleep")
-                # A nap on the same date must not replace the main sleep.
-                if date and entry.get("isMainSleep", True):
+                if date:
                     sleep_by_date[date] = entry.get("minutesAsleep", 0)
         
         if hr_data:

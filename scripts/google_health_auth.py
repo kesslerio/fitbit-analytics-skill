@@ -61,7 +61,6 @@ HTTP_TIMEOUT_SECONDS = 10
 
 
 def _display_path(path):
-    """Show a path with the home directory collapsed to ~ so messages stay short."""
     path = Path(path).resolve()
     try:
         return "~/" + str(path.relative_to(Path.home()))
@@ -81,15 +80,11 @@ class FitbitReauthRequiredError(FitbitAuthError):
 
 
 def reauth_message(cause):
-    """One-line re-login instruction: the cause and the exact command to run."""
     return f"Google Health auth {cause}; run: {LOGIN_COMMAND}"
 
 
-# --- state file helpers -----------------------------------------------------
-
 @contextmanager
 def state_lock():
-    """Serialize token refresh and state writes across processes."""
     LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     with LOCK_PATH.open("a+", encoding="utf-8") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
@@ -100,7 +95,6 @@ def state_lock():
 
 
 def atomic_write_json(path, payload):
-    """Write JSON atomically with owner-only permissions."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_path = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
     try:
@@ -117,7 +111,6 @@ def atomic_write_json(path, payload):
 
 
 def read_json(path):
-    """Read a JSON file, or return None when it is absent or unreadable."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -139,6 +132,10 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+def _expires_at(tokens):
+    return (_now() + timedelta(seconds=int(tokens.get("expires_in", 3600)))).isoformat()
+
+
 def _parse_time(value):
     try:
         parsed = datetime.fromisoformat(value)
@@ -150,7 +147,6 @@ def _parse_time(value):
 
 
 def _token_error(error):
-    """Return (error, description) from an OAuth token endpoint HTTPError body."""
     try:
         body = json.loads(error.read().decode("utf-8"))
     except Exception:
@@ -161,7 +157,6 @@ def _token_error(error):
 
 
 def _post_token(params):
-    """POST to the token endpoint and return the decoded JSON body."""
     request = urllib.request.Request(
         TOKEN_URL,
         data=urllib.parse.urlencode(params).encode("utf-8"),
@@ -171,8 +166,6 @@ def _post_token(params):
     with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
 
-
-# --- runtime auth -----------------------------------------------------------
 
 class GoogleHealthAuth:
     """Supplies a valid access token from the state file, refreshing on demand."""
@@ -227,7 +220,7 @@ class GoogleHealthAuth:
             if not access_token:
                 raise FitbitAuthError("Google Health token refresh returned no access token.")
             state["access_token"] = access_token
-            state["expires_at"] = (_now() + timedelta(seconds=int(tokens.get("expires_in", 3600)))).isoformat()
+            state["expires_at"] = _expires_at(tokens)
             if tokens.get("refresh_token"):
                 state["refresh_token"] = tokens["refresh_token"]
             if tokens.get("scope"):
@@ -264,8 +257,6 @@ class GoogleHealthAuth:
                 ) from error
         raise FitbitAuthError("Google Health token refresh failed after retries.")
 
-
-# --- login ------------------------------------------------------------------
 
 class LoginError(RuntimeError):
     """A login step failed; the message tells the owner what to do next."""
@@ -379,7 +370,7 @@ def finish_login(redirect_url):
         "redirect_uri": pending["redirect_uri"],
         "refresh_token": tokens["refresh_token"],
         "access_token": tokens.get("access_token"),
-        "expires_at": (_now() + timedelta(seconds=int(tokens.get("expires_in", 3600)))).isoformat(),
+        "expires_at": _expires_at(tokens),
         "scopes": granted,
         "logged_in_at": _now().isoformat(),
     }

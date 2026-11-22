@@ -26,13 +26,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from google_health_auth import FitbitAuthError  # noqa: E402  (re-exported for consumers)
+from google_health_auth import FitbitAuthError  # noqa: E402
 from google_health_auth import FitbitReauthRequiredError  # noqa: E402
 from google_health_auth import GoogleHealthAuth  # noqa: E402
 from google_health_auth import reauth_message  # noqa: E402
 
 API_BASE_URL = "https://health.googleapis.com/v4/users/me/dataTypes"
-HTTP_TIMEOUT_SECONDS = 20
+HTTP_TIMEOUT_SECONDS = 10
 
 # dailyRollUp accepts at most this many days per request; other types allow 90.
 ROLLUP_MAX_DAYS = {
@@ -45,7 +45,6 @@ ROLLUP_MAX_DAYS = {
 DEFAULT_ROLLUP_MAX_DAYS = 90
 SESSION_PAGE_SIZE = 25  # sleep and exercise pages hold at most 25 sessions
 
-# Google Health heart-rate zones in Fitbit's zone names, lowest zone first.
 HEART_RATE_ZONES = (
     ("LIGHT", "Out of Range"),
     ("MODERATE", "Fat Burn"),
@@ -64,14 +63,11 @@ class GoogleHealthApiError(RuntimeError):
     """A Google Health data request failed for a reason other than auth."""
 
 
-# --- conversions ------------------------------------------------------------
-
 def _to_date(value):
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
 def _dates(start_date, end_date):
-    """Every date from start to end inclusive, as YYYY-MM-DD strings."""
     start, end = _to_date(start_date), _to_date(end_date)
     return [(start + timedelta(days=offset)).isoformat() for offset in range((end - start).days + 1)]
 
@@ -81,7 +77,6 @@ def _civil_date(value):
 
 
 def _date_string(civil):
-    """YYYY-MM-DD from a Google Date or a CivilDateTime holding one."""
     if civil and "date" in civil:
         civil = civil["date"]
     if not civil:
@@ -90,7 +85,6 @@ def _date_string(civil):
 
 
 def _civil_datetime_string(civil):
-    """Fitbit-style local timestamp from a CivilDateTime."""
     day = _date_string(civil)
     if not day:
         return None
@@ -102,7 +96,6 @@ def _civil_datetime_string(civil):
 
 
 def _duration_seconds(value):
-    """Seconds in a protobuf Duration string such as '1800s' or '93.5s'."""
     if not value:
         return 0.0
     return float(str(value).rstrip("s"))
@@ -135,13 +128,12 @@ def _camel(data_type):
 
 
 def _date_filter(field, start_date, end_date):
-    """Closed date-range filter: start <= field < end + 1 day."""
     end_exclusive = (_to_date(end_date) + timedelta(days=1)).isoformat()
     return f'{field} >= "{start_date}" AND {field} < "{end_exclusive}"'
 
 
-def _filter_prefix(data_type):
-    return data_type.replace("-", "_")
+def _km(millimeters):
+    return round(_int(millimeters) / 1e6, 2)
 
 
 class FitbitClient:
@@ -150,10 +142,7 @@ class FitbitClient:
     def __init__(self):
         self._auth = GoogleHealthAuth()
 
-    # --- HTTP -----------------------------------------------------------------
-
     def _request(self, method, path, operation, query=None, body=None, allow_retry=True):
-        """Single HTTP choke point: bearer auth, one refresh-and-retry on 401."""
         url = f"{API_BASE_URL}/{path}"
         if query:
             url += "?" + urllib.parse.urlencode(query)
@@ -198,7 +187,6 @@ class FitbitClient:
         return GoogleHealthApiError(f"Google Health {operation} failed: HTTP {error.code} {message or error.reason}")
 
     def _pages(self, method, path, operation, query=None, body=None):
-        """Yield each page of a paginated response, following nextPageToken."""
         page_token = None
         while True:
             page_query = dict(query or {})
@@ -214,7 +202,6 @@ class FitbitClient:
                 return
 
     def _daily_rollup(self, data_type, start_date, end_date):
-        """Daily rollup values keyed by date, split at the type's maximum range."""
         field = _camel(data_type)
         max_days = ROLLUP_MAX_DAYS.get(data_type, DEFAULT_ROLLUP_MAX_DAYS)
         operation = f"{data_type} dailyRollUp"
@@ -239,7 +226,6 @@ class FitbitClient:
         return values
 
     def _data_points(self, data_type, filter_text, method="list", page_size=None):
-        """All data points of one type matching a filter, across pages."""
         path = f"{data_type}/dataPoints" + (":reconcile" if method == "reconcile" else "")
         query = {"filter": filter_text}
         if page_size:
@@ -249,7 +235,13 @@ class FitbitClient:
             points.extend(page.get("dataPoints", []))
         return points
 
-    # --- activity -------------------------------------------------------------
+    def _daily_records(self, data_type, start_date, end_date):
+        """(date, record) for each record of a daily data type in the range."""
+        key = _camel(data_type)
+        field = data_type.replace("-", "_") + ".date"
+        for point in self._data_points(data_type, _date_filter(field, start_date, end_date)):
+            record = point.get(key) or {}
+            yield _date_string(record.get("date")), record
 
     def get_steps(self, start_date, end_date):
         """Daily step totals as Fitbit `activities-steps`."""
@@ -271,7 +263,7 @@ class FitbitClient:
         """Daily distance in km as Fitbit `activities-distance`."""
         rollup = self._daily_rollup("distance", start_date, end_date)
         return {"activities-distance": [
-            {"dateTime": day, "value": str(round(_int(rollup.get(day, {}).get("millimetersSum")) / 1e6, 2))}
+            {"dateTime": day, "value": str(_km(rollup.get(day, {}).get("millimetersSum")))}
             for day in _dates(start_date, end_date)
         ]}
 
@@ -285,7 +277,7 @@ class FitbitClient:
             entry.get("activityLevel"): _int(entry.get("activeMinutesSum"))
             for entry in active.get("activeMinutesRollupByActivityLevel", [])
         }
-        distance_km = round(_int(distance.get("millimetersSum")) / 1e6, 2)
+        distance_km = _km(distance.get("millimetersSum"))
         return {"summary": {
             "distance": distance_km,
             "distances": [{"activity": "total", "distance": distance_km}],
@@ -343,28 +335,16 @@ class FitbitClient:
                 }})
         return {"activities-active-zone-minutes": days}
 
-    # --- heart rate -----------------------------------------------------------
-
     def get_heartrate(self, start_date, end_date):
         """Resting HR and heart-rate zones per day as Fitbit `activities-heart`."""
         resting = {}
-        for point in self._data_points(
-            "daily-resting-heart-rate",
-            _date_filter("daily_resting_heart_rate.date", start_date, end_date),
-        ):
-            record = point.get("dailyRestingHeartRate") or {}
-            day = _date_string(record.get("date"))
+        for day, record in self._daily_records("daily-resting-heart-rate", start_date, end_date):
             if day and record.get("beatsPerMinute") is not None:
                 resting[day] = _int(record["beatsPerMinute"])
 
         lookback_start = (_to_date(start_date) - timedelta(days=ZONE_THRESHOLD_LOOKBACK_DAYS)).isoformat()
         thresholds = {}
-        for point in self._data_points(
-            "daily-heart-rate-zones",
-            _date_filter("daily_heart_rate_zones.date", lookback_start, end_date),
-        ):
-            record = point.get("dailyHeartRateZones") or {}
-            day = _date_string(record.get("date"))
+        for day, record in self._daily_records("daily-heart-rate-zones", lookback_start, end_date):
             if day:
                 thresholds[day] = {
                     zone.get("heartRateZoneType"): (_int(zone.get("minBeatsPerMinute")), _int(zone.get("maxBeatsPerMinute")))
@@ -392,8 +372,6 @@ class FitbitClient:
                 value["restingHeartRate"] = resting[day]
             days.append({"dateTime": day, "value": value})
         return {"activities-heart": days}
-
-    # --- sleep ----------------------------------------------------------------
 
     def get_sleep(self, start_date, end_date):
         """Sleep sessions by the date they end, main sleep first within a date.
@@ -445,17 +423,10 @@ class FitbitClient:
             "levels": {"summary": levels},
         }
 
-    # --- health metrics -------------------------------------------------------
-
     def get_spo2(self, start_date, end_date):
         """Daily SpO2 (sleep average and confidence bounds) as Fitbit spo2 entries."""
         days = []
-        for point in self._data_points(
-            "daily-oxygen-saturation",
-            _date_filter("daily_oxygen_saturation.date", start_date, end_date),
-        ):
-            record = point.get("dailyOxygenSaturation") or {}
-            day = _date_string(record.get("date"))
+        for day, record in self._daily_records("daily-oxygen-saturation", start_date, end_date):
             if day:
                 days.append({"dateTime": day, "value": {
                     "avg": record.get("averagePercentage"),
