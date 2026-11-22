@@ -292,7 +292,7 @@ def _stored_client():
     if state and state.get("client_id") and state.get("client_secret") and state.get("redirect_uri"):
         return {key: state[key] for key in ("client_id", "client_secret", "redirect_uri")}
     raise LoginError(
-        "No OAuth client is stored yet. Fetch the Google OAuth client JSON from 1Password and run: "
+        "No OAuth client is stored yet. Fetch the Google OAuth client JSON from your password manager and run: "
         f"{LOGIN_COMMAND} --client-secrets <path>"
     )
 

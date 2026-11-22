@@ -137,7 +137,8 @@ class BriefingGoldenTests(unittest.TestCase):
         self.assertEqual(client.raw_requests, [])
 
 
-PRODUCTION_LOGIN_COMMAND = "python3 ~/projects/skills/shared/fitbit-analytics/scripts/google_health_auth.py login"
+# A realistic installed path: the skill checkout under the home directory.
+PRODUCTION_LOGIN_COMMAND = "python3 ~/skills/shared/fitbit-analytics/scripts/google_health_auth.py login"
 
 
 class FailingClient(FakeFitbitClient):
@@ -148,8 +149,8 @@ class FailingClient(FakeFitbitClient):
         setattr(self, method, mock.Mock(side_effect=error))
 
 
-def last_lines_as_captured_by_run_job(stderr, lines=3, limit=200):
-    """Mirror run-job.sh: join the last 3 stderr lines and keep 200 characters."""
+def last_lines_as_captured_by_failure_alert(stderr, lines=3, limit=200):
+    """Mirror the scheduler's failure alert: join the last 3 stderr lines and keep 200 characters."""
     return " ".join(stderr.strip().splitlines()[-lines:])[:limit]
 
 
@@ -200,7 +201,7 @@ class BriefingFailureTests(unittest.TestCase):
         self.assertTrue(lines[0].startswith("ERROR:"))
         self.assertIn("token refresh failed", lines[0])
         self.assertLessEqual(len(lines[0]), 160)
-        self.assertIn(lines[0], last_lines_as_captured_by_run_job(stderr))
+        self.assertIn(lines[0], last_lines_as_captured_by_failure_alert(stderr))
 
     def test_auth_error_inside_azm_fetch_fails_the_run(self):
         error = FitbitAuthError("Google Health active-zone-minutes dailyRollUp rejected a refreshed token (HTTP 401).")

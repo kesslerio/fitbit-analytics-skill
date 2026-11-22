@@ -184,8 +184,8 @@ class LoginTests(AuthTestCase):
         self.assertEqual((state["client_id"], state["client_secret"]), ("stored-client", "stored-secret"))
         self.assertEqual((state["refresh_token"], state["access_token"]), ("new-refresh", "new-access"))
 
-    def test_first_login_without_client_secrets_points_to_1password(self):
-        with self.assertRaisesRegex(gha.LoginError, "1Password.*--client-secrets"):
+    def test_first_login_without_client_secrets_points_to_password_manager(self):
+        with self.assertRaisesRegex(gha.LoginError, "password manager.*--client-secrets"):
             gha._stored_client()
 
     def test_cli_two_step_login_completes_with_redirect_url(self):
