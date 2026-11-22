@@ -305,17 +305,11 @@ class FixedDatetime(datetime):
 
 
 class EndToEndTests(AdapterTestCase):
-    def test_golden_day_through_google_matches_briefing_golden_except_efficiency(self):
+    def test_golden_day_through_google_matches_briefing_golden(self):
         stdout, _, exit_code = run_briefing(fitbit_api.FitbitClient(), "text", target_date="2026-01-20")
 
         self.assertEqual(exit_code, 0)
-        golden = read_golden("full_day.text.txt").splitlines()
-        actual = stdout.splitlines()
-        efficiency = [i for i, line in enumerate(golden) if line.startswith("  • Efficiency")]
-        self.assertEqual(len(efficiency), 1)
-        expected_without = [line for line in golden if not line.startswith("  • Efficiency")]
-        actual_without = [line for line in actual if not line.startswith("  • Efficiency")]
-        self.assertEqual(actual_without, expected_without)
+        self.assertEqual(stdout, read_golden("full_day.text.txt"))
 
     def test_alerts_from_google_match_alerts_from_fitbit_shaped_data(self):
         def run_alerts(client):

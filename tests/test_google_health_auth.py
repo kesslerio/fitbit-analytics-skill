@@ -298,9 +298,12 @@ class RefreshTests(AuthTestCase):
             gha.GoogleHealthAuth().access_token()
 
     def test_env_and_secrets_tokens_are_ignored(self):
-        secrets_conf = self.dir / "secrets.conf"
+        # The legacy client read tokens from this file under HOME.
+        secrets_conf = self.dir / ".config" / "systemd" / "user" / "secrets.conf"
+        secrets_conf.parent.mkdir(parents=True)
         secrets_conf.write_text('FITBIT_ACCESS_TOKEN="secrets-access"\nFITBIT_REFRESH_TOKEN="secrets-refresh"\n')
         env = {
+            "HOME": str(self.dir),
             "FITBIT_ACCESS_TOKEN": "env-access",
             "FITBIT_REFRESH_TOKEN": "env-refresh",
             "FITBIT_CLIENT_ID": "env-client",
