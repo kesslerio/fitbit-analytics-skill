@@ -117,7 +117,7 @@ response also carried the day's logged activities and goals; use
 | 403 naming insufficient scopes | `FitbitReauthRequiredError` (login again) |
 | 400 `ACCOUNT_NOT_LINKED` | `FitbitAuthError` telling the owner to sign in to the Google Health app |
 | Token endpoint `invalid_grant` | `FitbitReauthRequiredError` |
-| Token endpoint 429, 5xx or network error | Retry after 1, 2 and 4 seconds, then `FitbitAuthError` |
+| Token endpoint 429, 5xx, network error or read timeout | Retry after 1, 2 and 4 seconds, then `FitbitAuthError` |
 | Other data errors | `GoogleHealthApiError` naming the data type and method |
 
 ## Rate limits

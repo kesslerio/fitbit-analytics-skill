@@ -161,8 +161,11 @@ class FitbitClient:
                 self._auth.refresh(force=True)
                 return self._request(method, path, operation, query, body, allow_retry=False)
             raise self._api_error(error, operation) from error
-        except urllib.error.URLError as error:
-            raise GoogleHealthApiError(f"Google Health {operation} failed: {error.reason}") from error
+        except (urllib.error.URLError, OSError) as error:
+            # urllib wraps only send-side failures in URLError; a read timeout
+            # surfaces as a bare TimeoutError.
+            reason = getattr(error, "reason", error)
+            raise GoogleHealthApiError(f"Google Health {operation} failed: {reason}") from error
 
     def _api_error(self, error, operation):
         try:

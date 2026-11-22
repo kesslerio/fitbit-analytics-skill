@@ -256,25 +256,21 @@ def main():
             for zone in heart_rate_zones:
                 name = zone.get("name", "")
                 minutes = zone.get("minutes", 0)
+                # A zone without thresholds cannot contribute a midpoint estimate.
+                has_bounds = "min" in zone and "max" in zone
                 max_hr = zone.get("max", 0)
                 min_hr = zone.get("min", 0)
                 
                 if "Fat Burn" in name:
                     hr_zones["fat_burn"] = minutes
-                    # Estimate avg HR in Fat Burn zone
-                    weighted_hr_sum += ((min_hr + max_hr) / 2) * minutes
-                    total_minutes += minutes
                 elif "Cardio" in name:
                     hr_zones["cardio"] = minutes
-                    weighted_hr_sum += ((min_hr + max_hr) / 2) * minutes
-                    total_minutes += minutes
                 elif "Peak" in name:
                     hr_zones["peak"] = minutes
+                # "Out of Range" is mostly resting time and stays out of the average.
+                if has_bounds and any(label in name for label in ("Fat Burn", "Cardio", "Peak")):
                     weighted_hr_sum += ((min_hr + max_hr) / 2) * minutes
                     total_minutes += minutes
-                elif "Out of Range" in name:
-                    # Exclude from average (mostly resting/sedentary)
-                    pass
             
             # Calculate average HR (weighted by time in each zone)
             if total_minutes > 0:
@@ -341,7 +337,7 @@ def main():
                 yesterday_azm = azm_list[0].get("value", {})
             else:
                 yesterday_azm = {}
-        except FitbitReauthRequiredError:
+        except FitbitAuthError:
             raise
         except Exception as e:
             logging.warning(f"Failed to fetch Active Zone Minutes for {yesterday}: {e}")

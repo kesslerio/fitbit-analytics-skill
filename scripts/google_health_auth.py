@@ -248,12 +248,15 @@ class GoogleHealthAuth:
                 raise FitbitAuthError(
                     f"Google Health token refresh failed: HTTP {error.code} {detail}"
                 ) from error
-            except urllib.error.URLError as error:
+            except (urllib.error.URLError, OSError) as error:
+                # urllib wraps only send-side failures in URLError; a read
+                # timeout surfaces as a bare TimeoutError.
                 if attempt < attempts - 1:
                     time.sleep(RETRY_DELAYS_SECONDS[attempt])
                     continue
+                reason = getattr(error, "reason", error)
                 raise FitbitAuthError(
-                    f"Google Health token refresh failed after {attempts} attempts: {error.reason}"
+                    f"Google Health token refresh failed after {attempts} attempts: {reason}"
                 ) from error
         raise FitbitAuthError("Google Health token refresh failed after retries.")
 

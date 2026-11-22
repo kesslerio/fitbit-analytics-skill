@@ -291,6 +291,12 @@ class ErrorMappingTests(AdapterTestCase):
         self.assertNotIsInstance(caught.exception, fitbit_api.FitbitReauthRequiredError)
         self.assertIn("sign in to the Google Health app", str(caught.exception))
 
+    def test_read_timeout_names_the_failed_operation(self):
+        self.server.errors.append(TimeoutError("timed out"))
+
+        with self.assertRaisesRegex(fitbit_api.GoogleHealthApiError, "steps dailyRollUp failed: timed out"):
+            self.client.get_steps("2026-01-20", "2026-01-20")
+
     def test_other_http_error_names_the_failed_operation(self):
         self.server.errors.append(http_error(500, "Internal Server Error", {"error": {"code": 500, "message": "boom"}}))
 

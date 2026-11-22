@@ -250,6 +250,49 @@ class RefreshTests(AuthTestCase):
         self.assertIn(gha.LOGIN_COMMAND, str(caught.exception))
         self.assertEqual(self.read_state(), before)
 
+    def test_forced_refresh_posts_even_when_stored_token_looks_fresh(self):
+        self.write_state(expires_at=iso_in(hours=1))
+
+        with mock.patch.object(
+            gha.urllib.request, "urlopen", return_value=FakeResponse({"access_token": "fresh-access", "expires_in": 3599})
+        ) as urlopen_mock:
+            refreshed = gha.GoogleHealthAuth().refresh(force=True)
+
+        self.assertTrue(refreshed)
+        self.assertEqual(urlopen_mock.call_count, 1)
+        self.assertEqual(self.read_state()["access_token"], "fresh-access")
+
+    def test_network_errors_and_read_timeouts_are_retried(self):
+        self.write_state(expires_at=iso_in(minutes=-1))
+        responses = [
+            urllib.error.URLError("connection refused"),
+            TimeoutError("timed out"),
+            FakeResponse({"access_token": "fresh-access", "expires_in": 3599}),
+        ]
+
+        def fake_urlopen(req, timeout=10):
+            item = responses.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        with mock.patch.object(gha.urllib.request, "urlopen", side_effect=fake_urlopen):
+            token = gha.GoogleHealthAuth().access_token()
+
+        self.assertEqual(token, "fresh-access")
+        self.assertEqual([c.args[0] for c in gha.time.sleep.call_args_list], [1, 2])
+
+    def test_exhausted_read_timeouts_raise_generic_auth_error(self):
+        before = self.write_state(expires_at=iso_in(minutes=-1))
+
+        with mock.patch.object(gha.urllib.request, "urlopen", side_effect=TimeoutError("timed out")):
+            with self.assertRaises(gha.FitbitAuthError) as caught:
+                gha.GoogleHealthAuth().access_token()
+
+        self.assertNotIsInstance(caught.exception, gha.FitbitReauthRequiredError)
+        self.assertIn("token refresh failed", str(caught.exception))
+        self.assertEqual(self.read_state(), before)
+
     def test_transient_503_retries_with_backoff_then_succeeds(self):
         self.write_state(expires_at=iso_in(minutes=-1))
         responses = [

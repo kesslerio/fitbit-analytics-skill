@@ -22,6 +22,26 @@
     },
     {
       "weight": {
+        "weightGrams": 80900.0,
+        "sampleTime": {
+          "physicalTime": "2026-01-20T14:30:00Z",
+          "utcOffset": "-28800s",
+          "civilTime": {
+            "date": {
+              "year": 2026,
+              "month": 1,
+              "day": 20
+            },
+            "time": {
+              "hours": 6,
+              "minutes": 30
+            }
+          }
+        }
+      }
+    },
+    {
+      "weight": {
         "weightGrams": 80600.0,
         "sampleTime": {
           "physicalTime": "2026-01-20T03:00:00Z",

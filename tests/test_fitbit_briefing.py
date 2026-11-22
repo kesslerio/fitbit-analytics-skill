@@ -202,6 +202,26 @@ class BriefingFailureTests(unittest.TestCase):
         self.assertLessEqual(len(lines[0]), 160)
         self.assertIn(lines[0], last_lines_as_captured_by_run_job(stderr))
 
+    def test_auth_error_inside_azm_fetch_fails_the_run(self):
+        error = FitbitAuthError("Google Health active-zone-minutes dailyRollUp rejected a refreshed token (HTTP 401).")
+
+        stdout, stderr, exit_code = run_briefing(FailingClient("get_active_zone_minutes", error), "text")
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr.splitlines(), ["ERROR: " + str(error)])
+
+    def test_zones_without_thresholds_fall_back_to_resting_hr(self):
+        fixture = load_fixture("full_day.json")
+        for zone in fixture["heartrate"][0]["value"]["heartRateZones"]:
+            zone.pop("min")
+            zone.pop("max")
+
+        stdout, _, exit_code = run_briefing(FakeFitbitClient(fixture), "json")
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(json.loads(stdout)["avg_hr"], 58)
+
     def test_long_error_is_cut_to_one_160_character_line(self):
         error = RuntimeError("Google Health sleep reconcile failed: HTTP 500 " + "x" * 300 + "\nsecond line")
 
