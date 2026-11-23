@@ -54,7 +54,7 @@ python scripts/fitbit_briefing.py --format json      # JSON output
 # - Yesterday's Active Zone Minutes (total, Fat Burn, Cardio, Peak)
 # - Today's activity summary (steps, calories, floors, distance)
 # - Heart rate (resting, average, zones)
-# - Sleep (duration, awake minutes; efficiency shows as unavailable)
+# - Sleep (duration, awake minutes)
 # - Trends vs 7-day average
 ```
 
@@ -81,7 +81,7 @@ Yesterday's activities and Active Zone Minutes appear in the text format only.
 
 **Exit codes:** 0 when the briefing was printed, 1 for any other failure (the last stderr line is a one-line `ERROR:` summary), and 2 when Google Health needs a new login (stderr is one line naming the login command).
 
-**Note:** Sleep efficiency, Daily Readiness and Cardio Load are not available from the Google Health API. Efficiency is shown as unavailable; the skill does not estimate it.
+**Note:** Sleep efficiency, Daily Readiness and Cardio Load are not available from the Google Health API. The report leaves efficiency out; the skill does not estimate it.
 
 ### 2. Data Fetching (CLI)
 ```bash
