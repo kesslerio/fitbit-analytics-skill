@@ -9,7 +9,7 @@ Fitbit health and fitness data integration for OpenClaw. Fetch steps, heart rate
 
 - **Activity Tracking**: Fetch daily steps, distance, calories, floors, and active minutes.
 - **Heart Rate**: Resting heart rate and time in heart-rate zones.
-- **Sleep Analytics**: Sleep duration, minutes awake, and sleep stages (Deep, Light, REM, Wake). Sleep efficiency is not available from the Google Health API and is shown as unavailable.
+- **Sleep Analytics**: Sleep duration, minutes awake, and sleep stages (Deep, Light, REM, Wake). Sleep efficiency is not available from the Google Health API, so the report leaves it out.
 - **Reports**: Generate daily/weekly health reports with trend analysis.
 - **Automation**: A morning briefing with exit codes a scheduler can alert on.
 

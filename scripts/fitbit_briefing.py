@@ -144,8 +144,8 @@ def _format_text_briefing(data, yesterday_activities=None, yesterday_azm=None, b
     # Heart Rate
     lines.append("*Heart Rate*")
     resting_hr = data.get("resting_hr", "N/A")
-    avg_hr = data.get("avg_hr", "N/A")
-    lines.append(f"  • Average HR: {avg_hr} bpm")
+    # avg_hr (JSON only) is a midpoint estimate over the elevated zones, not a daily average,
+    # so the text report leaves it out rather than show a misleading heart rate.
     lines.append(f"  • Resting HR: {resting_hr} bpm")
     
     hr_zones = data.get("hr_zones", {})
@@ -167,7 +167,6 @@ def _format_text_briefing(data, yesterday_activities=None, yesterday_azm=None, b
         lines.append(f"  • Duration: {sleep_hours} hours")
     else:
         lines.append(f"  • Duration: No data")
-    lines.append("  • Efficiency: unavailable (not provided by Google Health API)")
     lines.append(f"  • Awake episodes: {awake_count}")
     lines.append("")
     

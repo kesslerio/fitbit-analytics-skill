@@ -9,12 +9,10 @@
   • Activity level: Sedentary
 
 *Heart Rate*
-  • Average HR: None bpm
   • Resting HR: None bpm
 
 *Sleep*
   • Duration: No data
-  • Efficiency: unavailable (not provided by Google Health API)
   • Awake episodes: None
 
 *Trends (vs 7-day avg)*
