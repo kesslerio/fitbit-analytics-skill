@@ -95,6 +95,22 @@ def _civil_datetime_string(civil):
     )
 
 
+def _interval_local(interval, which):
+    """(local date, local datetime string) for an interval's "Start" or "End".
+
+    The live v4 API sends only the UTC time and its UTC offset for sleep and exercise intervals;
+    a civil time, when present, takes precedence.
+    """
+    civil = interval.get(f"civil{which}Time")
+    if civil:
+        return _date_string(civil), _civil_datetime_string(civil)
+    utc = _timestamp(interval.get(f"{which.lower()}Time"))
+    if utc is None:
+        return None, None
+    local = utc + timedelta(seconds=_duration_seconds(interval.get(f"{which.lower()}UtcOffset")))
+    return local.date().isoformat(), local.strftime("%Y-%m-%dT%H:%M:%S.000")
+
+
 def _duration_seconds(value):
     if not value:
         return 0.0
@@ -308,7 +324,7 @@ class FitbitClient:
                 "name": exercise.get("displayName", "Unknown"),
                 "duration": int(seconds * 1000),
                 "calories": _int((exercise.get("metricsSummary") or {}).get("caloriesKcal")),
-                "startTime": _civil_datetime_string(interval.get("civilStartTime")),
+                "startTime": _interval_local(interval, "Start")[1],
             })
         activities.sort(key=lambda activity: activity["startTime"] or "")
         return {"activities": activities}
@@ -412,9 +428,9 @@ class FitbitClient:
 
         minutes_in_period = _int(summary.get("minutesInSleepPeriod"))
         return {
-            "dateOfSleep": _date_string(interval.get("civilEndTime")),
-            "startTime": _civil_datetime_string(interval.get("civilStartTime")),
-            "endTime": _civil_datetime_string(interval.get("civilEndTime")),
+            "dateOfSleep": _interval_local(interval, "End")[0],
+            "startTime": _interval_local(interval, "Start")[1],
+            "endTime": _interval_local(interval, "End")[1],
             "duration": minutes_in_period * 60000,
             "timeInBed": minutes_in_period,
             "minutesAsleep": _int(summary.get("minutesAsleep")),

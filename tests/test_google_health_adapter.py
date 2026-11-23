@@ -34,11 +34,21 @@ def _iso(civil_date):
     return f"{civil_date['year']:04d}-{civil_date['month']:02d}-{civil_date['day']:02d}"
 
 
+def _local_date(interval, which):
+    """The interval's local date: its civil field when present, else UTC time plus the UTC offset."""
+    civil = interval.get(f"civil{which}Time")
+    if civil:
+        return _iso(civil["date"])
+    utc = datetime.fromisoformat(interval[f"{which.lower()}Time"].replace("Z", "+00:00"))
+    offset = float(interval[f"{which.lower()}UtcOffset"].rstrip("s"))
+    return (utc + timedelta(seconds=offset)).date().isoformat()
+
+
 def _point_date(data_type, point):
     if data_type == "sleep":
-        return _iso(point["sleep"]["interval"]["civilEndTime"]["date"])
+        return _local_date(point["sleep"]["interval"], "End")
     if data_type == "exercise":
-        return _iso(point["exercise"]["interval"]["civilStartTime"]["date"])
+        return _local_date(point["exercise"]["interval"], "Start")
     if data_type == "weight":
         return _iso(point["weight"]["sampleTime"]["civilTime"]["date"])
     return _iso(point[fitbit_api._camel(data_type)]["date"])
@@ -103,6 +113,18 @@ class FakeGoogleHealth:
 
     def calls(self, data_type):
         return [r for r in self.requests if f"/dataTypes/{data_type}/" in r.full_url]
+
+
+class LiveShapeGoogleHealth(FakeGoogleHealth):
+    """Serves sleep and exercise intervals the way the live API does: UTC times and offsets, no civil fields."""
+
+    def fixture(self, data_type, method):
+        points = json.loads(json.dumps(super().fixture(data_type, method)))
+        for point in points:
+            interval = (point.get("sleep") or point.get("exercise") or {}).get("interval") or {}
+            interval.pop("civilStartTime", None)
+            interval.pop("civilEndTime", None)
+        return points
 
 
 class AdapterTestCase(unittest.TestCase):
@@ -209,6 +231,26 @@ class HeartRateMappingTests(AdapterTestCase):
         self.assertEqual(len(dates), 30)
         self.assertEqual(dates, sorted(set(dates)))
         self.assertEqual(len(self.server.calls("time-in-heart-rate-zone")), 3)
+
+
+class LiveIntervalShapeTests(AdapterTestCase):
+    def setUp(self):
+        super().setUp()
+        self.server.__class__ = LiveShapeGoogleHealth
+
+    def test_sleep_without_civil_times_is_dated_by_its_local_end(self):
+        sessions = self.client.get_sleep("2026-01-20", "2026-01-20")["sleep"]
+
+        self.assertEqual([s["isMainSleep"] for s in sessions], [True, False])
+        self.assertEqual([s["dateOfSleep"] for s in sessions], ["2026-01-20", "2026-01-20"])
+        self.assertTrue(all(s["startTime"] and s["endTime"] for s in sessions))
+        self.assertEqual(sessions[0]["minutesAsleep"], 412)
+
+    def test_exercise_without_civil_times_keeps_its_local_start(self):
+        activity = self.client.get_logged_activities("2026-01-19")["activities"][0]
+
+        self.assertEqual(activity["name"], "Walk")
+        self.assertTrue(activity["startTime"].startswith("2026-01-19T"), activity["startTime"])
 
 
 class SleepAndMetricMappingTests(AdapterTestCase):
