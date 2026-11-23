@@ -167,7 +167,11 @@ def _format_text_briefing(data, yesterday_activities=None, yesterday_azm=None, b
         lines.append(f"  • Duration: {sleep_hours} hours")
     else:
         lines.append(f"  • Duration: No data")
-    lines.append(f"  • Awake episodes: {awake_count}")
+    # awake_count holds minutesAwake (the JSON key name is kept for existing consumers).
+    if isinstance(awake_count, (int, float)):
+        lines.append(f"  • Awake: {awake_count} min")
+    else:
+        lines.append("  • Awake: No data")
     lines.append("")
     
     # Trends

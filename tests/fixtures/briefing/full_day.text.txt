@@ -26,7 +26,7 @@
 
 *Sleep*
   • Duration: 7.5 hours
-  • Awake episodes: 38
+  • Awake: 38 min
 
 *Trends (vs 7-day avg)*
   • Steps: ↑ +6%
