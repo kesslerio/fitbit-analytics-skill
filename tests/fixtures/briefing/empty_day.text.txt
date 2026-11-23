@@ -1,0 +1,22 @@
+📅 *Fitbit Morning Briefing — 2026-01-20*
+
+*Activity*
+  • Steps: 0 / 10,000 goal
+  • Calories: 0 burned
+  • Distance: 0.00 km
+  • Floors: 0
+  • Active minutes: 0
+  • Activity level: Sedentary
+
+*Heart Rate*
+  • Average HR: None bpm
+  • Resting HR: None bpm
+
+*Sleep*
+  • Duration: No data
+  • Efficiency: unavailable (not provided by Google Health API)
+  • Awake episodes: None
+
+*Trends (vs 7-day avg)*
+  • Steps: → flat
+  • Calories: → flat

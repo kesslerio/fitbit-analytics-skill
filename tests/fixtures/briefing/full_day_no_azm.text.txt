@@ -1,0 +1,29 @@
+📅 *Fitbit Morning Briefing — 2026-01-20*
+
+*Yesterday's Activity*
+  • Walk: 30.0 min • 160 cal
+
+*Activity*
+  • Steps: 8,421 / 10,000 goal
+  • Calories: 2,310 burned
+  • Distance: 6.12 km
+  • Floors: 9
+  • Active minutes: 35
+  • Activity level: Moderate
+
+*Heart Rate*
+  • Average HR: 129 bpm
+  • Resting HR: 58 bpm
+  • Fat Burn: 42 min
+  • Cardio: 12 min
+  • Peak: 3 min
+  • Active Zone: 15 min
+
+*Sleep*
+  • Duration: 7.5 hours
+  • Efficiency: unavailable (not provided by Google Health API)
+  • Awake episodes: 38
+
+*Trends (vs 7-day avg)*
+  • Steps: ↑ +6%
+  • Calories: ↑ +3%

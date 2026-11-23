@@ -1,0 +1,11 @@
+{
+  "_comment": "Synthetic Fitbit-shaped client responses for a day with no synced data.",
+  "target_date": "2026-01-20",
+  "steps": [],
+  "calories": [],
+  "activity_summary": {},
+  "heartrate": [],
+  "sleep": [],
+  "logged_activities": {},
+  "active_zone_minutes": []
+}

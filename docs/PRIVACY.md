@@ -3,13 +3,13 @@
 **Effective Date:** January 20, 2026
 
 ## 1. Introduction
-This Privacy Policy describes how this Personal Assistant ("we", "us", or "our") collects, uses, and discloses your information in connection with the Fitbit API integration.
+This Privacy Policy describes how this Personal Assistant ("we", "us", or "our") collects, uses, and discloses your information in connection with the Google Health API integration (the successor to the Fitbit Web API).
 
 ## 2. Information We Collect
-We collect the following data from your Fitbit account:
+We collect the following Fitbit data from your Google account through the Google Health API:
 *   **Activity Data:** Steps, distance, calories burned, active minutes.
 *   **Heart Rate Data:** Continuous heart rate, resting heart rate.
-*   **Sleep Data:** Sleep duration, stages, and efficiency.
+*   **Sleep Data:** Sleep duration, stages, and minutes awake.
 
 ## 3. How We Use Your Information
 We use the collected data solely for:

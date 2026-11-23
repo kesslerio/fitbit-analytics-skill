@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Fitbit Web API Wrapper with Auto-Refresh and Token Persistence
+Fitbit data client backed by the Google Health API v4.
+
+The legacy Fitbit Web API is shut down. FitbitClient reads the same metrics from
+Google Health and returns them in the Fitbit Web API JSON shapes that the
+briefing, alerts and this CLI already parse.
+
+Login once with scripts/google_health_auth.py (see SETUP.md).
 
 Usage:
     python fitbit_api.py activity --days 7
@@ -9,481 +15,465 @@ Usage:
     python fitbit_api.py report --type weekly
 """
 
-import os
-import sys
-import json
 import argparse
-import base64
-import fcntl
-import hashlib
-import stat
-import tempfile
-import time
-import urllib.request
+import json
+import sys
 import urllib.error
 import urllib.parse
-from datetime import datetime, timedelta
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from contextlib import contextmanager
 
-SKILL_DIR = Path(__file__).parent.parent
-SECRETS_PATH = Path.home() / ".config" / "systemd" / "user" / "secrets.conf"
-TOKEN_CACHE_PATH = Path.home() / ".fitbit-analytics" / "tokens.json"
-TOKEN_LOCK_PATH = Path.home() / ".fitbit-analytics" / "tokens.lock"
+sys.path.insert(0, str(Path(__file__).parent))
+
+from google_health_auth import FitbitAuthError  # noqa: E402
+from google_health_auth import FitbitReauthRequiredError  # noqa: E402
+from google_health_auth import GoogleHealthAuth  # noqa: E402
+from google_health_auth import reauth_message  # noqa: E402
+
+API_BASE_URL = "https://health.googleapis.com/v4/users/me/dataTypes"
+HTTP_TIMEOUT_SECONDS = 10
+
+# dailyRollUp accepts at most this many days per request; other types allow 90.
+ROLLUP_MAX_DAYS = {
+    "total-calories": 14,
+    "active-minutes": 14,
+    "heart-rate": 14,
+    "calories-in-heart-rate-zone": 14,
+    "time-in-heart-rate-zone": 14,
+}
+DEFAULT_ROLLUP_MAX_DAYS = 90
+SESSION_PAGE_SIZE = 25  # sleep and exercise pages hold at most 25 sessions
+
+HEART_RATE_ZONES = (
+    ("LIGHT", "Out of Range"),
+    ("MODERATE", "Fat Burn"),
+    ("VIGOROUS", "Cardio"),
+    ("PEAK", "Peak"),
+)
+# Zone thresholds change slowly, so a day without its own record uses the latest
+# record from up to this many days before it.
+ZONE_THRESHOLD_LOOKBACK_DAYS = 7
+
+SLEEP_STAGE_LEVELS = {"AWAKE": "wake", "LIGHT": "light", "DEEP": "deep", "REM": "rem"}
+CLASSIC_SLEEP_LEVELS = {"AWAKE": "awake", "ASLEEP": "asleep", "RESTLESS": "restless"}
 
 
-class FitbitAuthError(RuntimeError):
-    """Base error for Fitbit authentication failures."""
+class GoogleHealthApiError(RuntimeError):
+    """A Google Health data request failed for a reason other than auth."""
 
 
-class FitbitReauthRequiredError(FitbitAuthError):
-    """Raised when Fitbit requires a new OAuth authorization flow."""
+def _to_date(value):
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def _dates(start_date, end_date):
+    start, end = _to_date(start_date), _to_date(end_date)
+    return [(start + timedelta(days=offset)).isoformat() for offset in range((end - start).days + 1)]
+
+
+def _civil_date(value):
+    return {"year": value.year, "month": value.month, "day": value.day}
+
+
+def _date_string(civil):
+    if civil and "date" in civil:
+        civil = civil["date"]
+    if not civil:
+        return None
+    return f"{int(civil['year']):04d}-{int(civil['month']):02d}-{int(civil['day']):02d}"
+
+
+def _civil_datetime_string(civil):
+    day = _date_string(civil)
+    if not day:
+        return None
+    time_of_day = civil.get("time") or {}
+    return (
+        f"{day}T{int(time_of_day.get('hours', 0)):02d}:{int(time_of_day.get('minutes', 0)):02d}:"
+        f"{int(time_of_day.get('seconds', 0)):02d}.000"
+    )
+
+
+def _interval_local(interval, which):
+    """(local date, local datetime string) for an interval's "Start" or "End".
+
+    The live v4 API sends only the UTC time and its UTC offset for sleep and exercise intervals;
+    a civil time, when present, takes precedence.
+    """
+    civil = interval.get(f"civil{which}Time")
+    if civil:
+        return _date_string(civil), _civil_datetime_string(civil)
+    utc = _timestamp(interval.get(f"{which.lower()}Time"))
+    if utc is None:
+        return None, None
+    local = utc + timedelta(seconds=_duration_seconds(interval.get(f"{which.lower()}UtcOffset")))
+    return local.date().isoformat(), local.strftime("%Y-%m-%dT%H:%M:%S.000")
+
+
+def _duration_seconds(value):
+    if not value:
+        return 0.0
+    return float(str(value).rstrip("s"))
+
+
+def _timestamp(value):
+    """Parse an RFC 3339 timestamp, tolerating nanosecond fractions."""
+    if not value:
+        return None
+    text = value.replace("Z", "+00:00")
+    if "." in text:
+        head, rest = text.split(".", 1)
+        digits = "".join(ch for ch in rest if ch.isdigit())
+        zone = rest[len(digits):]
+        text = f"{head}.{digits[:6]}{zone}"
+    parsed = datetime.fromisoformat(text)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _int(value, default=0):
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _camel(data_type):
+    head, *rest = data_type.split("-")
+    return head + "".join(part.capitalize() for part in rest)
+
+
+def _date_filter(field, start_date, end_date):
+    end_exclusive = (_to_date(end_date) + timedelta(days=1)).isoformat()
+    return f'{field} >= "{start_date}" AND {field} < "{end_exclusive}"'
+
+
+def _km(millimeters):
+    return round(_int(millimeters) / 1e6, 2)
 
 
 class FitbitClient:
-    """Fitbit Web API client with auto-refresh and token persistence"""
+    """Reads Fitbit data through Google Health API v4 in Fitbit Web API shapes."""
 
-    BASE_URL = "https://api.fitbit.com"
-    TOKEN_REFRESH_THRESHOLD_HOURS = 1  # Refresh if expires within 1 hour
-    REFRESH_MAX_AGE_HOURS = 6
-    REFRESH_RETRY_DELAYS_SECONDS = (1, 2, 4)
+    def __init__(self):
+        self._auth = GoogleHealthAuth()
 
-    def __init__(self, client_id=None, client_secret=None, access_token=None, refresh_token=None):
-        self.client_id, _ = self._resolve_value(client_id, "FITBIT_CLIENT_ID")
-        self.client_secret, _ = self._resolve_value(client_secret, "FITBIT_CLIENT_SECRET")
-        self._access_token, self._access_token_source = self._resolve_value(access_token, "FITBIT_ACCESS_TOKEN")
-        self._refresh_token, self._refresh_token_source = self._resolve_value(refresh_token, "FITBIT_REFRESH_TOKEN")
-        self._token_expires_at = None
-        self._token_refreshed_at = None
-        self._load_token_metadata()
-
-        if not self._access_token:
-            raise ValueError("FITBIT_ACCESS_TOKEN not set. Get tokens via OAuth flow.")
-
-        self.headers = {
-            "Authorization": f"Bearer {self._access_token}",
-            "Content-Type": "application/json"
-        }
-
-    def _load_env_from_secrets(self, key):
-        """Load env var from secrets.conf if not already set"""
-        if os.environ.get(key):
-            return os.environ[key]
-        return self._load_secret_value(key)
-
-    def _load_secret_value(self, key):
-        """Load a value from secrets.conf."""
-        if SECRETS_PATH.exists():
-            for line in SECRETS_PATH.read_text().split('\n'):
-                parsed_key, parsed_value, _ = self._parse_secret_assignment(line)
-                if parsed_key == key:
-                    value = parsed_value.strip().strip('"')
-                    return value or None
-        return None
-
-    def _resolve_value(self, explicit_value, key):
-        """Resolve config value and record its source precedence."""
-        if explicit_value is not None:
-            return explicit_value, "explicit"
-
-        env_value = os.environ.get(key)
-        if env_value:
-            return env_value, "env"
-
-        secret_value = self._load_secret_value(key)
-        if secret_value:
-            return secret_value, "secrets"
-
-        return None, None
-
-    def _load_token_metadata(self):
-        """Load token metadata from cache file or JWT decode."""
-        self._load_cached_tokens()
-
-        if not self._token_expires_at and self._access_token:
-            self._decode_jwt_expiry()
-
-    def _load_cached_tokens(self, allow_override=False):
-        """Load the latest persisted tokens and timestamps from cache."""
-        if not TOKEN_CACHE_PATH.exists():
-            return False
+    def _request(self, method, path, operation, query=None, body=None, allow_retry=True):
+        url = f"{API_BASE_URL}/{path}"
+        if query:
+            url += "?" + urllib.parse.urlencode(query)
+        headers = {"Authorization": f"Bearer {self._auth.access_token()}"}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
-            data = json.loads(TOKEN_CACHE_PATH.read_text())
-        except (json.JSONDecodeError, OSError):
-            return False
+            with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            if error.code == 401 and allow_retry:
+                self._auth.refresh(force=True)
+                return self._request(method, path, operation, query, body, allow_retry=False)
+            raise self._api_error(error, operation) from error
+        except (urllib.error.URLError, OSError) as error:
+            # urllib wraps only send-side failures in URLError; a read timeout
+            # surfaces as a bare TimeoutError.
+            reason = getattr(error, "reason", error)
+            raise GoogleHealthApiError(f"Google Health {operation} failed: {reason}") from error
 
-        access_token = data.get("access_token")
-        refresh_token = data.get("refresh_token")
-        expires_at = data.get("expires_at")
-        refreshed_at = data.get("refreshed_at")
-
-        if access_token and self._can_use_cached_token(self._access_token_source, allow_override):
-            self._access_token = access_token
-            self._access_token_source = "cache"
-        if refresh_token and self._can_use_cached_token(self._refresh_token_source, allow_override):
-            self._refresh_token = refresh_token
-            self._refresh_token_source = "cache"
-        if expires_at:
-            try:
-                self._token_expires_at = datetime.fromisoformat(expires_at)
-            except ValueError:
-                self._token_expires_at = None
-        if refreshed_at:
-            try:
-                self._token_refreshed_at = datetime.fromisoformat(refreshed_at)
-            except ValueError:
-                self._token_refreshed_at = None
-        if self._access_token:
-            self.headers = {
-                "Authorization": f"Bearer {self._access_token}",
-                "Content-Type": "application/json"
-            }
-        return True
-
-    def _can_use_cached_token(self, token_source, allow_override):
-        """Determine whether cached token values may replace the current source."""
-        if token_source in ("explicit", "env", "secrets"):
-            return False
-        return allow_override or token_source in (None, "cache")
-
-    def _reload_authoritative_tokens(self):
-        """Reload tokens from their authoritative source before refresh under lock."""
-        if self._access_token_source == "env":
-            latest_access = os.environ.get("FITBIT_ACCESS_TOKEN")
-            if latest_access:
-                self._access_token = latest_access
-        elif self._access_token_source == "secrets":
-            latest_access = self._load_secret_value("FITBIT_ACCESS_TOKEN")
-            if latest_access:
-                self._access_token = latest_access
-
-        if self._refresh_token_source == "env":
-            latest_refresh = os.environ.get("FITBIT_REFRESH_TOKEN")
-            if latest_refresh:
-                self._refresh_token = latest_refresh
-        elif self._refresh_token_source == "secrets":
-            latest_refresh = self._load_secret_value("FITBIT_REFRESH_TOKEN")
-            if latest_refresh:
-                self._refresh_token = latest_refresh
-
-        if self._access_token:
-            self.headers = {
-                "Authorization": f"Bearer {self._access_token}",
-                "Content-Type": "application/json"
-            }
-
-    def _decode_jwt_expiry(self):
-        """Decode access token JWT to get expiry timestamp"""
+    def _api_error(self, error, operation):
         try:
-            payload = self._access_token.split('.')[1]
-            padding = 4 - len(payload) % 4
-            if padding != 4:
-                payload += '=' * padding
-            data = json.loads(base64.b64decode(payload))
-            exp = data.get("exp")
-            if exp:
-                self._token_expires_at = datetime.fromtimestamp(exp)
-        except (IndexError, json.JSONDecodeError, TypeError):
-            self._token_expires_at = None
-
-    def _should_refresh(self):
-        """Check if token should be refreshed"""
-        if not self._token_expires_at:
-            return True
-        threshold = datetime.now() + timedelta(hours=self.TOKEN_REFRESH_THRESHOLD_HOURS)
-        return self._token_expires_at < threshold
-
-    def _is_refresh_age_exceeded(self, max_age_hours):
-        """Check if refresh token rotation age exceeds the desired max age."""
-        if not self._token_refreshed_at:
-            return True
-        age_limit = datetime.now() - timedelta(hours=max_age_hours)
-        return self._token_refreshed_at < age_limit
-
-    def _should_refresh_for_rotation(self, max_age_hours):
-        """Check if token refresh is due for expiry or rotation age."""
-        return self._should_refresh() or self._is_refresh_age_exceeded(max_age_hours)
-
-    def _can_refresh_access_token(self):
-        """Check whether refresh credentials are available."""
-        return bool(self.client_id and self.client_secret and self._refresh_token)
-
-    @contextmanager
-    def _token_lock(self):
-        """Serialize token refresh and persistence across processes."""
-        TOKEN_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with TOKEN_LOCK_PATH.open("a+", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
-    def _atomic_write_text(self, path, content):
-        """Write file contents atomically with secure permissions."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_path = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(temp_path, stat.S_IRUSR | stat.S_IWUSR)
-            os.replace(temp_path, path)
-        finally:
-            if os.path.exists(temp_path):
-                os.unlink(temp_path)
-
-    def _upsert_secret(self, content, key, value):
-        """Insert or replace a quoted env assignment without regex substitution."""
-        assignment = f'{key}="{value}"'
-        lines = content.splitlines()
-        for index, line in enumerate(lines):
-            parsed_key, _, prefix = self._parse_secret_assignment(line)
-            if parsed_key == key:
-                lines[index] = f'{prefix}{assignment}'
-                break
-        else:
-            lines.append(assignment)
-
-        updated = "\n".join(lines)
-        if content.endswith("\n") or not content:
-            updated += "\n"
-        return updated
-
-    def _parse_secret_assignment(self, line):
-        """Parse a secrets.conf assignment and preserve export prefix."""
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            return None, None, ""
-
-        prefix = ""
-        if stripped.startswith("export "):
-            prefix = "export "
-            stripped = stripped[len("export "):].lstrip()
-
-        key, separator, value = stripped.partition("=")
-        if separator != "=":
-            return None, None, prefix
-
-        return key.strip(), value.strip(), prefix
-
-    def _mask_token(self, value):
-        """Return a short fingerprint for audit logs without exposing secrets."""
-        if not value:
-            return "missing"
-        return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
-
-    def _log_token_rotation(self):
-        """Write a masked audit message for successful token rotation."""
-        refreshed_at = self._token_refreshed_at.isoformat() if self._token_refreshed_at else "unknown"
-        access_fingerprint = self._mask_token(self._access_token)
-        refresh_fingerprint = self._mask_token(self._refresh_token)
-        print(
-            f"Rotated Fitbit tokens at {refreshed_at} "
-            f"(access={access_fingerprint}, refresh={refresh_fingerprint})",
-            file=sys.stderr,
-        )
-
-    def _save_tokens(self, access_token, refresh_token, expires_in):
-        """Save tokens to secrets.conf and cache file"""
-        self._access_token = access_token
-        self._refresh_token = refresh_token
-        self._token_refreshed_at = datetime.now()
-        self._token_expires_at = self._token_refreshed_at + timedelta(seconds=expires_in)
-
-        # Update secrets.conf
-        if SECRETS_PATH.exists():
-            content = SECRETS_PATH.read_text()
-            updates = {
-                "FITBIT_ACCESS_TOKEN": access_token,
-                "FITBIT_REFRESH_TOKEN": refresh_token
-            }
-            for key, value in updates.items():
-                content = self._upsert_secret(content, key, value)
-            self._atomic_write_text(SECRETS_PATH, content)
-
-        # Save to cache file
-        cache_payload = json.dumps({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_at": self._token_expires_at.isoformat(),
-            "refreshed_at": self._token_refreshed_at.isoformat()
-        }, indent=2)
-        self._atomic_write_text(TOKEN_CACHE_PATH, cache_payload)
-        self.headers["Authorization"] = f"Bearer {self._access_token}"
-
-    def _parse_http_error(self, error):
-        """Extract Fitbit error type and message from an HTTPError body."""
-        try:
-            payload = error.read().decode("utf-8")
+            raw = error.read().decode("utf-8", "replace")
         except Exception:
-            return None, None
-
+            raw = ""
         try:
-            data = json.loads(payload)
-        except json.JSONDecodeError:
-            return None, payload or None
+            message = json.loads(raw).get("error", {}).get("message")
+        except (ValueError, AttributeError):
+            message = None
 
-        errors = data.get("errors")
-        if isinstance(errors, list) and errors:
-            error_item = errors[0]
-            return error_item.get("errorType"), error_item.get("message")
-        return None, payload or None
-
-    def refresh_access_token(self, force=False, max_age_hours=None):
-        """Refresh access token when due or when forced."""
-        with self._token_lock():
-            self._reload_authoritative_tokens()
-            self._load_cached_tokens(allow_override=False)
-
-            if not force:
-                if max_age_hours is None:
-                    if not self._should_refresh():
-                        return False
-                elif not self._should_refresh_for_rotation(max_age_hours):
-                    return False
-
-            if not self._can_refresh_access_token():
-                raise FitbitAuthError("Fitbit credentials or refresh token are missing.")
-
-            auth_b64 = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
-            data = urllib.parse.urlencode({
-                "grant_type": "refresh_token",
-                "refresh_token": self._refresh_token
-            }).encode()
-
-            req = urllib.request.Request(
-                "https://api.fitbit.com/oauth2/token",
-                data=data,
-                headers={
-                    "Authorization": f"Basic {auth_b64}",
-                    "Content-Type": "application/x-www-form-urlencoded"
-                },
-                method="POST"
+        if error.code == 403 and (
+            "ACCESS_TOKEN_SCOPE_INSUFFICIENT" in raw or "insufficient authentication scopes" in raw.lower()
+        ):
+            return FitbitReauthRequiredError(reauth_message("lacks a required scope"))
+        if "ACCOUNT_NOT_LINKED" in raw:
+            return FitbitAuthError(
+                "Google Health account is not linked: sign in to the Google Health app on the phone, then retry."
             )
+        if error.code == 401:
+            return FitbitAuthError(f"Google Health {operation} rejected a refreshed token (HTTP 401).")
+        return GoogleHealthApiError(f"Google Health {operation} failed: HTTP {error.code} {message or error.reason}")
 
-            for attempt, delay in enumerate(self.REFRESH_RETRY_DELAYS_SECONDS, start=1):
-                try:
-                    with urllib.request.urlopen(req, timeout=10) as resp:
-                        tokens = json.loads(resp.read().decode("utf-8"))
-                    access_token = tokens.get("access_token")
-                    refresh_token = tokens.get("refresh_token")
-                    expires_in = tokens.get("expires_in", 28800)
-                    if not access_token or not refresh_token:
-                        raise FitbitAuthError("Fitbit refresh response did not include rotated tokens.")
+    def _pages(self, method, path, operation, query=None, body=None):
+        page_token = None
+        while True:
+            page_query = dict(query or {})
+            page_body = dict(body) if body is not None else None
+            if page_token and page_body is not None:
+                page_body["pageToken"] = page_token
+            elif page_token:
+                page_query["pageToken"] = page_token
+            page = self._request(method, path, operation, page_query or None, page_body)
+            yield page
+            page_token = page.get("nextPageToken")
+            if not page_token:
+                return
 
-                    self._save_tokens(access_token, refresh_token, expires_in)
-                    self._log_token_rotation()
-                    return True
-                except urllib.error.HTTPError as error:
-                    error_type, error_message = self._parse_http_error(error)
-                    if error.code == 400 and error_type == "invalid_grant":
-                        raise FitbitReauthRequiredError(
-                            "Fitbit refresh token is invalid; re-authorization is required."
-                        ) from error
-                    if error.code in (429, 500, 502, 503, 504) and attempt < len(self.REFRESH_RETRY_DELAYS_SECONDS):
-                        time.sleep(delay)
-                        continue
-                    detail = error_message or error.reason
-                    raise FitbitAuthError(
-                        f"Fitbit token refresh failed: HTTP {error.code} {detail}"
-                    ) from error
-                except urllib.error.URLError as error:
-                    if attempt < len(self.REFRESH_RETRY_DELAYS_SECONDS):
-                        time.sleep(delay)
-                        continue
-                    raise FitbitAuthError(
-                        f"Fitbit token refresh failed after retries: {error.reason}"
-                    ) from error
+    def _daily_rollup(self, data_type, start_date, end_date):
+        field = _camel(data_type)
+        max_days = ROLLUP_MAX_DAYS.get(data_type, DEFAULT_ROLLUP_MAX_DAYS)
+        operation = f"{data_type} dailyRollUp"
+        values = {}
+        chunk_start, end = _to_date(start_date), _to_date(end_date)
+        while chunk_start <= end:
+            chunk_end = min(chunk_start + timedelta(days=max_days - 1), end)
+            body = {
+                "range": {
+                    "start": {"date": _civil_date(chunk_start)},
+                    "end": {"date": _civil_date(chunk_end + timedelta(days=1))},
+                },
+                "windowSizeDays": 1,
+                "pageSize": (chunk_end - chunk_start).days + 1,
+            }
+            for page in self._pages("POST", f"{data_type}/dataPoints:dailyRollUp", operation, body=body):
+                for point in page.get("rollupDataPoints", []):
+                    day = _date_string(point.get("civilStartTime"))
+                    if day and point.get(field) is not None:
+                        values[day] = point[field]
+            chunk_start = chunk_end + timedelta(days=1)
+        return values
 
-            raise FitbitAuthError("Fitbit token refresh failed after retries.")
+    def _data_points(self, data_type, filter_text, method="list", page_size=None):
+        path = f"{data_type}/dataPoints" + (":reconcile" if method == "reconcile" else "")
+        query = {"filter": filter_text}
+        if page_size:
+            query["pageSize"] = page_size
+        points = []
+        for page in self._pages("GET", path, f"{data_type} {method}", query=query):
+            points.extend(page.get("dataPoints", []))
+        return points
 
-    def _request(self, endpoint, date_type="date", allow_retry=True):
-        """Make API request with auto-refresh"""
-        if self._should_refresh() and self._can_refresh_access_token():
-            try:
-                self.refresh_access_token()
-            except FitbitAuthError as error:
-                print(f"Fitbit preflight refresh skipped: {error}", file=sys.stderr)
-
-        url = f"{self.BASE_URL}/{endpoint}"
-        req = urllib.request.Request(url, headers=self.headers)
-
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 401 and allow_retry and self._can_refresh_access_token():
-                self.refresh_access_token(force=True)
-                return self._request(endpoint, date_type, allow_retry=False)
-            raise
+    def _daily_records(self, data_type, start_date, end_date):
+        """(date, record) for each record of a daily data type in the range."""
+        key = _camel(data_type)
+        field = data_type.replace("-", "_") + ".date"
+        for point in self._data_points(data_type, _date_filter(field, start_date, end_date)):
+            record = point.get(key) or {}
+            yield _date_string(record.get("date")), record
 
     def get_steps(self, start_date, end_date):
-        """Fetch step data"""
-        endpoint = f"1/user/-/activities/steps/date/{start_date}/{end_date}.json"
-        return self._request(endpoint)
+        """Daily step totals as Fitbit `activities-steps`."""
+        rollup = self._daily_rollup("steps", start_date, end_date)
+        return {"activities-steps": [
+            {"dateTime": day, "value": str(_int(rollup.get(day, {}).get("countSum")))}
+            for day in _dates(start_date, end_date)
+        ]}
 
     def get_calories(self, start_date, end_date):
-        """Fetch calorie data"""
-        endpoint = f"1/user/-/activities/calories/date/{start_date}/{end_date}.json"
-        return self._request(endpoint)
+        """Daily total calories as Fitbit `activities-calories`."""
+        rollup = self._daily_rollup("total-calories", start_date, end_date)
+        return {"activities-calories": [
+            {"dateTime": day, "value": str(_int(rollup.get(day, {}).get("kcalSum")))}
+            for day in _dates(start_date, end_date)
+        ]}
 
     def get_distance(self, start_date, end_date):
-        """Fetch distance data"""
-        endpoint = f"1/user/-/activities/distance/date/{start_date}/{end_date}.json"
-        return self._request(endpoint)
+        """Daily distance in km as Fitbit `activities-distance`."""
+        rollup = self._daily_rollup("distance", start_date, end_date)
+        return {"activities-distance": [
+            {"dateTime": day, "value": str(_km(rollup.get(day, {}).get("millimetersSum")))}
+            for day in _dates(start_date, end_date)
+        ]}
 
-    def get_activity_summary(self, start_date, end_date):
-        """Fetch activity summary"""
-        endpoint = f"1/user/-/activities/date/{start_date}.json"
-        return self._request(endpoint)
+    def get_activity_summary(self, start_date, end_date=None):
+        """One day's activity summary (distance in km, floors, active minutes)."""
+        distance = self._daily_rollup("distance", start_date, start_date).get(start_date, {})
+        floors = self._daily_rollup("floors", start_date, start_date).get(start_date, {})
+        active = self._daily_rollup("active-minutes", start_date, start_date).get(start_date, {})
 
-    def get_heartrate(self, start_date, end_date):
-        """Fetch heart rate data"""
-        endpoint = f"1/user/-/activities/heart/date/{start_date}/{end_date}.json"
-        return self._request(endpoint)
+        minutes_by_level = {
+            entry.get("activityLevel"): _int(entry.get("activeMinutesSum"))
+            for entry in active.get("activeMinutesRollupByActivityLevel", [])
+        }
+        distance_km = _km(distance.get("millimetersSum"))
+        return {"summary": {
+            "distance": distance_km,
+            "distances": [{"activity": "total", "distance": distance_km}],
+            "floors": _int(floors.get("countSum")),
+            "veryActiveMinutes": minutes_by_level.get("VIGOROUS", 0),
+            "fairlyActiveMinutes": minutes_by_level.get("MODERATE", 0),
+            "lightlyActiveMinutes": minutes_by_level.get("LIGHT", 0),
+        }}
 
-    def get_sleep(self, start_date, end_date):
-        """Fetch sleep data (summary)"""
-        endpoint = f"1.2/user/-/sleep/date/{start_date}/{end_date}.json"
-        return self._request(endpoint)
-
-    def get_sleep_stages(self, start_date, end_date):
-        """Fetch detailed sleep stages"""
-        endpoint = f"1.3/user/-/sleep/date/{start_date}/{end_date}.json"
-        return self._request(endpoint)
-
-    def get_spo2(self, start_date, end_date):
-        """Fetch blood oxygen data"""
-        endpoint = f"1/user/-/spo2/date/{start_date}/{end_date}.json"
-        return self._request(endpoint)
-
-    def get_weight(self, start_date, end_date):
-        """Fetch weight data"""
-        endpoint = f"1/user/-/body/weight/date/{start_date}/{end_date}.json"
-        return self._request(endpoint)
+    def get_logged_activities(self, date):
+        """Exercises started on one date as Fitbit `activities[]` (duration in ms)."""
+        points = self._data_points(
+            "exercise",
+            _date_filter("exercise.interval.civil_start_time", date, date),
+            page_size=SESSION_PAGE_SIZE,
+        )
+        activities = []
+        for point in points:
+            exercise = point.get("exercise") or {}
+            interval = exercise.get("interval") or {}
+            seconds = _duration_seconds(exercise.get("activeDuration"))
+            if not seconds and interval.get("startTime") and interval.get("endTime"):
+                seconds = (_timestamp(interval["endTime"]) - _timestamp(interval["startTime"])).total_seconds()
+            activities.append({
+                "name": exercise.get("displayName", "Unknown"),
+                "duration": int(seconds * 1000),
+                "calories": _int((exercise.get("metricsSummary") or {}).get("caloriesKcal")),
+                "startTime": _interval_local(interval, "Start")[1],
+            })
+        activities.sort(key=lambda activity: activity["startTime"] or "")
+        return {"activities": activities}
 
     def get_active_zone_minutes(self, start_date, end_date):
-        """Fetch Active Zone Minutes (AZM) data
-        
-        Returns AZM breakdown:
-        - activeZoneMinutes (total)
-        - fatBurnActiveZoneMinutes (1× credit)
-        - cardioActiveZoneMinutes (2× credit)
-        - peakActiveZoneMinutes (2× credit)
+        """Daily Active Zone Minutes as Fitbit `activities-active-zone-minutes`.
+
+        Google's per-zone sums are already credited (one per fat-burn minute, two
+        per cardio or peak minute), so the total is their sum, as in Fitbit.
         """
-        # Calculate number of days between start and end
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
-        days = (end - start).days + 1
-        
-        # Use period format: 1d, 7d, 30d, etc.
-        period = f"{days}d" if days <= 30 else "30d"
-        
-        endpoint = f"1/user/-/activities/active-zone-minutes/date/{start_date}/{period}.json"
-        return self._request(endpoint)
+        rollup = self._daily_rollup("active-zone-minutes", start_date, end_date)
+        days = []
+        for day in _dates(start_date, end_date):
+            value = rollup.get(day)
+            if not value:
+                continue
+            fat_burn = _int(value.get("sumInFatBurnHeartZone"))
+            cardio = _int(value.get("sumInCardioHeartZone"))
+            peak = _int(value.get("sumInPeakHeartZone"))
+            total = fat_burn + cardio + peak
+            if total:
+                days.append({"dateTime": day, "value": {
+                    "activeZoneMinutes": total,
+                    "fatBurnActiveZoneMinutes": fat_burn,
+                    "cardioActiveZoneMinutes": cardio,
+                    "peakActiveZoneMinutes": peak,
+                }})
+        return {"activities-active-zone-minutes": days}
+
+    def get_heartrate(self, start_date, end_date):
+        """Resting HR and heart-rate zones per day as Fitbit `activities-heart`."""
+        resting = {}
+        for day, record in self._daily_records("daily-resting-heart-rate", start_date, end_date):
+            if day and record.get("beatsPerMinute") is not None:
+                resting[day] = _int(record["beatsPerMinute"])
+
+        lookback_start = (_to_date(start_date) - timedelta(days=ZONE_THRESHOLD_LOOKBACK_DAYS)).isoformat()
+        thresholds = {}
+        for day, record in self._daily_records("daily-heart-rate-zones", lookback_start, end_date):
+            if day:
+                thresholds[day] = {
+                    zone.get("heartRateZoneType"): (_int(zone.get("minBeatsPerMinute")), _int(zone.get("maxBeatsPerMinute")))
+                    for zone in record.get("heartRateZones", [])
+                }
+
+        time_in_zone = self._daily_rollup("time-in-heart-rate-zone", start_date, end_date)
+
+        days = []
+        for day in _dates(start_date, end_date):
+            known = [threshold_day for threshold_day in thresholds if threshold_day <= day]
+            day_thresholds = thresholds[max(known)] if known else {}
+            minutes = {
+                entry.get("heartRateZone"): round(_duration_seconds(entry.get("duration")) / 60)
+                for entry in (time_in_zone.get(day) or {}).get("timeInHeartRateZones", [])
+            }
+            zones = []
+            for zone_type, name in HEART_RATE_ZONES:
+                zone = {"name": name, "minutes": minutes.get(zone_type, 0)}
+                if zone_type in day_thresholds:
+                    zone["min"], zone["max"] = day_thresholds[zone_type]
+                zones.append(zone)
+            value = {"customHeartRateZones": [], "heartRateZones": zones}
+            if day in resting:
+                value["restingHeartRate"] = resting[day]
+            days.append({"dateTime": day, "value": value})
+        return {"activities-heart": days}
+
+    def get_sleep(self, start_date, end_date):
+        """Sleep sessions by the date they end, main sleep first within a date.
+
+        Google Health does not provide sleep efficiency, so entries have no
+        `efficiency` key.
+        """
+        points = self._data_points(
+            "sleep",
+            _date_filter("sleep.interval.civil_end_time", start_date, end_date),
+            method="reconcile",
+            page_size=SESSION_PAGE_SIZE,
+        )
+        sessions = [self._sleep_entry(point.get("sleep") or {}) for point in points]
+        sessions = [session for session in sessions if session["dateOfSleep"]]
+        sessions.sort(key=lambda session: (session["dateOfSleep"], not session["isMainSleep"], session["startTime"] or ""))
+        return {"sleep": sessions}
+
+    def get_sleep_stages(self, start_date, end_date):
+        """Sleep sessions including the per-stage `levels.summary`."""
+        return self.get_sleep(start_date, end_date)
+
+    def _sleep_entry(self, sleep):
+        interval = sleep.get("interval") or {}
+        summary = sleep.get("summary") or {}
+        metadata = sleep.get("metadata") or {}
+        classic = sleep.get("type") == "CLASSIC"
+        level_names = CLASSIC_SLEEP_LEVELS if classic else SLEEP_STAGE_LEVELS
+
+        levels = {}
+        for stage in summary.get("stagesSummary", []):
+            name = level_names.get(stage.get("type"))
+            if name:
+                levels[name] = {"count": _int(stage.get("count")), "minutes": _int(stage.get("minutes"))}
+
+        minutes_in_period = _int(summary.get("minutesInSleepPeriod"))
+        return {
+            "dateOfSleep": _interval_local(interval, "End")[0],
+            "startTime": _interval_local(interval, "Start")[1],
+            "endTime": _interval_local(interval, "End")[1],
+            "duration": minutes_in_period * 60000,
+            "timeInBed": minutes_in_period,
+            "minutesAsleep": _int(summary.get("minutesAsleep")),
+            "minutesAwake": _int(summary.get("minutesAwake")),
+            "minutesToFallAsleep": _int(summary.get("minutesToFallAsleep")),
+            "minutesAfterWakeup": _int(summary.get("minutesAfterWakeUp")),
+            "isMainSleep": bool(metadata.get("mainSleep")),
+            "type": "classic" if classic else "stages",
+            "levels": {"summary": levels},
+        }
+
+    def get_spo2(self, start_date, end_date):
+        """Daily SpO2 (sleep average and confidence bounds) as Fitbit spo2 entries."""
+        days = []
+        for day, record in self._daily_records("daily-oxygen-saturation", start_date, end_date):
+            if day:
+                days.append({"dateTime": day, "value": {
+                    "avg": record.get("averagePercentage"),
+                    "min": record.get("lowerBoundPercentage"),
+                    "max": record.get("upperBoundPercentage"),
+                }})
+        days.sort(key=lambda entry: entry["dateTime"])
+        return days
+
+    def get_weight(self, start_date, end_date):
+        """Weight in kg as Fitbit `body-weight`, the last measurement of each date."""
+        latest = {}
+        for point in self._data_points(
+            "weight",
+            _date_filter("weight.sample_time.civil_time", start_date, end_date),
+        ):
+            record = point.get("weight") or {}
+            sample_time = record.get("sampleTime") or {}
+            day = _date_string(sample_time.get("civilTime"))
+            if not day or record.get("weightGrams") is None:
+                continue
+            taken_at = sample_time.get("physicalTime") or ""
+            if day not in latest or taken_at >= latest[day][0]:
+                latest[day] = (taken_at, float(record["weightGrams"]))
+        return {"body-weight": [
+            {"dateTime": day, "value": str(round(grams / 1000, 2))}
+            for day, (_, grams) in sorted(latest.items())
+        ]}
 
 
 class FitbitAnalyzer:
@@ -583,24 +573,19 @@ class FitbitReporter:
         }
 
 
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Fitbit Analytics CLI")
+    parser = argparse.ArgumentParser(description="Fitbit Analytics CLI (Google Health API)")
     parser.add_argument("command", choices=["activity", "steps", "calories", "heartrate", "sleep", "report", "summary"],
                        help="Data type to fetch or report type")
     parser.add_argument("--days", type=int, default=7, help="Number of days")
     parser.add_argument("--type", default="weekly", help="Report type")
-    parser.add_argument("--client-id", help="Fitbit client ID")
-    parser.add_argument("--client-secret", help="Fitbit client secret")
-    parser.add_argument("--access-token", help="Fitbit access token")
 
     args = parser.parse_args()
 
     try:
-        client = FitbitClient(
-            client_id=args.client_id,
-            client_secret=args.client_secret,
-            access_token=args.access_token
-        )
+        client = FitbitClient()
 
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=args.days)).strftime("%Y-%m-%d")
@@ -633,9 +618,8 @@ def main():
             report = reporter.generate_report(args.type, args.days)
             print(json.dumps(report, indent=2))
 
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        print("Set FITBIT_ACCESS_TOKEN or use --access-token", file=sys.stderr)
+    except FitbitAuthError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"API Error: {e}", file=sys.stderr)

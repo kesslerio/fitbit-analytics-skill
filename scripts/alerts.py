@@ -88,7 +88,8 @@ class FitbitAlerts:
         hr_by_date = {}
         
         if sleep_data:
-            for entry in sleep_data.get("sleep", []):
+            main_sleeps = (e for e in sleep_data.get("sleep", []) if e.get("isMainSleep", True))
+            for entry in main_sleeps:
                 date = entry.get("dateOfSleep")
                 if date:
                     sleep_by_date[date] = entry.get("minutesAsleep", 0)
@@ -169,18 +170,11 @@ def main():
     parser.add_argument("--steps", type=int, default=8000)
     parser.add_argument("--sleep", type=float, default=7)
     parser.add_argument("--resting-hr", type=int, default=80)
-    parser.add_argument("--client-id", help="Fitbit client ID")
-    parser.add_argument("--client-secret", help="Fitbit client secret")
-    parser.add_argument("--access-token", help="Fitbit access token")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     
     args = parser.parse_args()
     
-    client = FitbitClient(
-        client_id=args.client_id,
-        client_secret=args.client_secret,
-        access_token=args.access_token
-    )
+    client = FitbitClient()
     
     end_date = datetime.now().strftime("%Y-%m-%d")
     start_date = (datetime.now() - timedelta(days=args.days)).strftime("%Y-%m-%d")

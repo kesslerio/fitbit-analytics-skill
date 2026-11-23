@@ -1,5 +1,8 @@
 # Fitbit Metrics Reference
 
+The skill reads these metrics through the Google Health API. See
+`google-health-api.md` for where each value comes from.
+
 ## Activity Metrics
 
 | Metric | Healthy Range | Notes |
@@ -42,10 +45,17 @@
 | Metric | Healthy | Poor |
 |--------|---------|------|
 | Sleep Duration | 7-9 hours | <6 or >9 |
-| Sleep Efficiency | >90% | <85% |
+| Sleep Efficiency | >90% | <85% (not available from the Google Health API) |
 | Time to Fall Asleep | <20 min | >30 min |
 | Wake Episodes | <2 | >4 |
 | Resting HR During Sleep | Lower than waking | Elevated |
+
+## Active Zone Minutes
+
+Active Zone Minutes (AZM) are earned per minute spent in a heart-rate zone:
+1 per minute in the Fat Burn zone and 2 per minute in the Cardio and Peak
+zones. The daily total is the sum of the credited minutes from the three zones.
+The common goal is 150 AZM per week.
 
 ## Health Score Calculation
 
@@ -53,7 +63,7 @@
 # Activity Score (0-100)
 activity_score = min(100, (steps / 10000) * 50 + (active_minutes / 60) * 50)
 
-# Sleep Score (0-100)
+# Sleep Score (0-100); this example needs sleep efficiency, which the Google Health API does not provide
 sleep_score = (sleep_duration / 8) * 40 + (sleep_efficiency / 100) * 40 + (deep_sleep / 2) * 20
 
 # Overall Health Score
@@ -67,7 +77,7 @@ health_score = (activity_score + sleep_score) / 2
 | Steps | 10,000/day | Cardiovascular health |
 | Active Zone Minutes | 30/day | Longevity |
 | Sleep | 7-9 hours | Recovery, cognition |
-| Sleep Efficiency | >90% | Quality rest |
+| Sleep Efficiency | >90% | Quality rest (not available from the Google Health API) |
 | RHR | 60-80 bpm | Cardiovascular fitness |
 
 ## Alerts & Thresholds

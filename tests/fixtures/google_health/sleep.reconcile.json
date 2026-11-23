@@ -1,0 +1,128 @@
+{
+  "dataPoints": [
+    {
+      "sleep": {
+        "type": "CLASSIC",
+        "interval": {
+          "startTime": "2026-01-20T08:05:00Z",
+          "startUtcOffset": "-28800s",
+          "civilStartTime": {
+            "date": {
+              "year": 2026,
+              "month": 1,
+              "day": 20
+            },
+            "time": {
+              "hours": 0,
+              "minutes": 5
+            }
+          },
+          "endTime": "2026-01-20T08:45:00Z",
+          "endUtcOffset": "-28800s",
+          "civilEndTime": {
+            "date": {
+              "year": 2026,
+              "month": 1,
+              "day": 20
+            },
+            "time": {
+              "hours": 0,
+              "minutes": 45
+            }
+          }
+        },
+        "summary": {
+          "minutesInSleepPeriod": "40",
+          "minutesAsleep": "36",
+          "minutesAwake": "4",
+          "minutesToFallAsleep": "0",
+          "minutesAfterWakeUp": "0",
+          "stagesSummary": [
+            {
+              "type": "ASLEEP",
+              "minutes": "36",
+              "count": "1"
+            },
+            {
+              "type": "AWAKE",
+              "minutes": "4",
+              "count": "1"
+            }
+          ]
+        },
+        "metadata": {
+          "mainSleep": false,
+          "nap": true,
+          "processed": true
+        }
+      }
+    },
+    {
+      "sleep": {
+        "type": "STAGES",
+        "interval": {
+          "startTime": "2026-01-20T09:00:00Z",
+          "startUtcOffset": "-28800s",
+          "civilStartTime": {
+            "date": {
+              "year": 2026,
+              "month": 1,
+              "day": 20
+            },
+            "time": {
+              "hours": 1,
+              "minutes": 0
+            }
+          },
+          "endTime": "2026-01-20T16:30:00Z",
+          "endUtcOffset": "-28800s",
+          "civilEndTime": {
+            "date": {
+              "year": 2026,
+              "month": 1,
+              "day": 20
+            },
+            "time": {
+              "hours": 8,
+              "minutes": 30
+            }
+          }
+        },
+        "summary": {
+          "minutesInSleepPeriod": "450",
+          "minutesAsleep": "412",
+          "minutesAwake": "38",
+          "minutesToFallAsleep": "0",
+          "minutesAfterWakeUp": "0",
+          "stagesSummary": [
+            {
+              "type": "AWAKE",
+              "minutes": "38",
+              "count": "21"
+            },
+            {
+              "type": "LIGHT",
+              "minutes": "230",
+              "count": "25"
+            },
+            {
+              "type": "DEEP",
+              "minutes": "82",
+              "count": "4"
+            },
+            {
+              "type": "REM",
+              "minutes": "100",
+              "count": "6"
+            }
+          ]
+        },
+        "metadata": {
+          "mainSleep": true,
+          "nap": false,
+          "processed": true
+        }
+      }
+    }
+  ]
+}
